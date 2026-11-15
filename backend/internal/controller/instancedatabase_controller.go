@@ -193,7 +193,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			result.RequeueAfter = pendingRequeue
 		}
 	}
-	return result, nil
+	return withResync(result, eng, len(states) > 0), nil
 }
 
 // errOwnerPending and errOwnerInvalid explain why a database can't be

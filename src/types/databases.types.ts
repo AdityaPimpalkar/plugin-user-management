@@ -36,6 +36,9 @@ export interface DatabasesResponse {
   // False when the instance's engine doesn't manage databases.
   supported: boolean;
   canManage: boolean;
+  // False when only the owner and the users granted a role can connect,
+  // whatever a database's connect is.
+  connectChoice: boolean;
   databaseError?: string;
   // Set for PostgreSQL instances only.
   postgresql?: {

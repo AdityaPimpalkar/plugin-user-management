@@ -45,3 +45,17 @@ func TestValidate(t *testing.T) {
 		}
 	}
 }
+
+// SQL Server's password policy rejects passwords missing a character
+// class; about 1 in 40 random ones would.
+func TestGenerateHasEveryClass(t *testing.T) {
+	for range 2000 {
+		p, err := Generate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.ContainsAny(p, "ABCDEFGHJKLMNPQRSTUVWXYZ") || !strings.ContainsAny(p, "abcdefghijkmnopqrstuvwxyz") || !strings.ContainsAny(p, "23456789") {
+			t.Fatalf("password %q lacks a character class", p)
+		}
+	}
+}

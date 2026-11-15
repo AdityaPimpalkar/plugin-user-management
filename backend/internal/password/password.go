@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"unicode"
 )
 
 const (
@@ -17,8 +18,21 @@ const (
 	alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
 )
 
-// Generate returns a random password.
+// Generate returns a random password with upper and lower case letters
+// and digits, as password policies such as SQL Server's require.
 func Generate() (string, error) {
+	for {
+		password, err := random()
+		if err != nil {
+			return "", err
+		}
+		if hasEveryClass(password) {
+			return password, nil
+		}
+	}
+}
+
+func random() (string, error) {
 	max := big.NewInt(int64(len(alphabet)))
 	out := make([]byte, generatedLength)
 	for i := range out {
@@ -29,6 +43,21 @@ func Generate() (string, error) {
 		out[i] = alphabet[n.Int64()]
 	}
 	return string(out), nil
+}
+
+func hasEveryClass(password string) bool {
+	var upper, lower, digit bool
+	for _, r := range password {
+		switch {
+		case unicode.IsUpper(r):
+			upper = true
+		case unicode.IsLower(r):
+			lower = true
+		case unicode.IsDigit(r):
+			digit = true
+		}
+	}
+	return upper && lower && digit
 }
 
 // Validate checks a user-supplied password.

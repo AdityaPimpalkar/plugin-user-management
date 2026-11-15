@@ -31,6 +31,7 @@ plugin:
         - provider-cloudnative-pg
         - provider-percona-postgresql
         - provider-kserve
+        - mssql
 
 # PostgreSQL options of databases (InstanceDatabase spec.postgresql).
 postgresql:

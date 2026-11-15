@@ -239,7 +239,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			result.RequeueAfter = pendingRequeue
 		}
 	}
-	return result, nil
+	return withResync(result, eng, len(states) > 0), nil
 }
 
 // declarableRoles leaves out the roles granted on databases whose

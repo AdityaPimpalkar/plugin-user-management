@@ -26,6 +26,8 @@ interface DatabasesTableProps {
   databases: Database[];
   // Shows the databases' extensions, on PostgreSQL instances.
   showExtensions?: boolean;
+  // Shows who can connect, where databases offer the choice.
+  showConnect?: boolean;
   canManage: boolean;
   onAction: (action: DatabaseAction, database: ManagedDatabase) => void;
 }
@@ -82,14 +84,20 @@ const DatabaseActionsMenu = ({
   );
 };
 
-export const DatabasesTable = ({ databases, showExtensions, canManage, onAction }: DatabasesTableProps) => (
+export const DatabasesTable = ({
+  databases,
+  showExtensions,
+  showConnect = true,
+  canManage,
+  onAction,
+}: DatabasesTableProps) => (
   <TableContainer component={Paper} variant="outlined">
     <Table size="small">
       <TableHead>
         <TableRow>
           <TableCell>{Messages.columns.name}</TableCell>
           <TableCell>{Messages.columns.owner}</TableCell>
-          <TableCell>{Messages.columns.connect}</TableCell>
+          {showConnect && <TableCell>{Messages.columns.connect}</TableCell>}
           {showExtensions && <TableCell>{Messages.columns.extensions}</TableCell>}
           <TableCell>{Messages.columns.status}</TableCell>
           <TableCell align="right">{Messages.columns.actions}</TableCell>
@@ -107,13 +115,15 @@ export const DatabasesTable = ({ databases, showExtensions, canManage, onAction 
               </Stack>
             </TableCell>
             <TableCell>{db.owner}</TableCell>
-            <TableCell>
-              {db.connect && (
-                <Tooltip title={Messages.connectHelp[db.connect]}>
-                  <span>{Messages.connect[db.connect]}</span>
-                </Tooltip>
-              )}
-            </TableCell>
+            {showConnect && (
+              <TableCell>
+                {db.connect && (
+                  <Tooltip title={Messages.connectHelp[db.connect]}>
+                    <span>{Messages.connect[db.connect]}</span>
+                  </Tooltip>
+                )}
+              </TableCell>
+            )}
             {showExtensions && (
               <TableCell>
                 <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap' }}>

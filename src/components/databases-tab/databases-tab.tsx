@@ -46,7 +46,7 @@ export const DatabasesTab = ({ namespace, instanceName }: DatabasesTabProps) => 
     );
   }
 
-  const { databases, canManage, databaseError, postgresql } = data;
+  const { databases, canManage, connectChoice, databaseError, postgresql } = data;
   const owners = ownerOptions(users.data?.users ?? []);
   const close = () => {
     [createDatabase, updateDatabase, deleteDatabase].forEach((m) => m.reset());
@@ -81,12 +81,14 @@ export const DatabasesTab = ({ namespace, instanceName }: DatabasesTabProps) => 
       <DatabasesTable
         databases={databases}
         showExtensions={!!postgresql}
+        showConnect={connectChoice}
         canManage={canManage}
         onAction={(kind, database) => setDialog({ kind, database })}
       />
       {dialog?.kind === 'create' && (
         <DatabaseFormDialog
           owners={owners}
+          connectChoice={connectChoice}
           extensions={postgresql?.extensions}
           extensionsError={postgresql?.extensionsError}
           isSubmitting={createDatabase.isPending}
@@ -104,6 +106,7 @@ export const DatabasesTab = ({ namespace, instanceName }: DatabasesTabProps) => 
             postgresql: dialog.database.postgresql,
           }}
           owners={owners}
+          connectChoice={connectChoice}
           extensions={postgresql?.extensions}
           extensionsError={postgresql?.extensionsError}
           isSubmitting={updateDatabase.isPending}

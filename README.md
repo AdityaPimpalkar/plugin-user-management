@@ -22,6 +22,7 @@ Supported providers:
 | `provider-cloudnative-pg` | CloudNativePG 1.30+, through the operator's `DatabaseRole` resource |
 | `provider-percona-postgresql` | Percona Operator for PostgreSQL, through SQL as the operator's `postgres` superuser |
 | `provider-kserve` | API keys for models on the Envoy AI Gateway, through the provider's key Secrets |
+| `mssql` | Microsoft SQL Server (Solanica MSSQL operator), through T-SQL as `sa` |
 
 ## InstanceUser
 
@@ -72,7 +73,8 @@ See [examples/instanceuser.yaml](examples/instanceuser.yaml) (MongoDB),
 
 ## InstanceDatabase
 
-Supported for `provider-cloudnative-pg` and `provider-percona-postgresql`.
+Supported for `provider-cloudnative-pg`, `provider-percona-postgresql` and
+`mssql`.
 Manage them from the **Databases** section of the instance's **Access** tab,
 next to **Users**. It lists the managed databases with their owner, who can
 connect and status, next to the instance's other databases. There you create
@@ -367,6 +369,57 @@ itself, and never drops users. So the plugin manages users in SQL and leaves
   `spec.users[].databases`, which the operator creates owned by `postgres`,
   are reserved.
 
+### MSSQL engine
+
+The operator doesn't manage logins, so the plugin manages them, and the
+InstanceDatabases, in T-SQL:
+
+- Connects to the primary as `sa` (Secret `everest-secrets-<instance>`), at
+  `<instance>-primary` for Availability Groups and `<instance>` for a
+  standalone instance, over TLS verified against the CA in
+  `<instance>-tls-certs` (or the system roots for your own
+  `spec.tls.certificateSecret`).
+- Supported deployments: Availability Groups (`MSSQLAvailabilityGroup`) and
+  standalone instances of size 1. Users of a standalone instance with more
+  replicas or of a contained Availability Group stay `Pending` with the
+  reason. On an Availability Group, the operator copies logins, server roles
+  and server permissions to the secondaries and adds the plugin's databases
+  to the group; database users and role memberships move with the
+  databases. This needs an operator version that does both.
+- Each user is a SQL login (`CHECK_POLICY = ON`, so SQL Server's password
+  policy applies; the plugin's generated passwords meet it), a member of the
+  server role `openeverest_managed`, with a SID derived from the username so
+  that a login recreated after a failover maps to its database users again.
+  The plugin only alters or drops logins in that role. Passwords are read
+  from the user's Secret, under any key, and only changed when they don't
+  match (`PWDCOMPARE`).
+- Roles: `read` (`db_datareader`), `readWrite` (`db_datareader` and
+  `db_datawriter`) and `dbOwner` (`db_owner`) on one InstanceDatabase, which
+  create a user for the login in it; and `monitor` (`VIEW SERVER STATE` and
+  `VIEW ANY DEFINITION`) on the server. `sysadmin` and the other fixed server
+  roles can't be granted. Every reconcile, and every 5 minutes once `Ready`,
+  restores these memberships and permissions, so changes made in T-SQL or
+  lost in a failover are reverted.
+- `sa`, `##...##`, `NT ...` and certificate logins are system users;
+  usernames are at most 128 characters without `\`.
+- InstanceDatabases are created with `CREATE DATABASE`, marked with the
+  extended property `openeverest_managed`, and owned by the owner's login
+  (`ALTER AUTHORIZATION`): the owner is the database's `dbo`, so a role
+  granted to the owner on its own database is already held. On an
+  Availability Group, a database is `Pending` until the operator has added it
+  to the group. `connect` has no effect: SQL Server only lets in the owner
+  and the users granted a role on the database, as `Granted` does, and the
+  UI doesn't offer the choice.
+- Releasing removes the mark. Dropping ends the database's idle sessions and
+  waits while sessions run requests in it, then, on an Availability Group,
+  removes it from the group and drops it, holding the operator's lock so it
+  isn't added back in between; the operator drops the secondaries' copies.
+  Only databases with the mark are ever dropped.
+- Deleting a user drops its database users, ends its sessions and drops the
+  login; while it owns a database, it stays `Deleting` with the reason.
+- The connection string is `sqlserver://<user>:<password>@<host>:1433`,
+  like the Instance's own connection details.
+
 ### KServe engine (API keys for models)
 
 For `llm` and `predictor` Instances of provider-kserve exposed through the
@@ -526,7 +579,7 @@ done
 |---|---|---|
 | `postgresql.extensions.allowTrusted` | `true` | Let users create PostgreSQL's trusted extensions in databases |
 | `postgresql.extensions.allowed` | `[vector, postgis, timescaledb, age, pg_stat_statements]` | Further extensions users may create |
-| `plugin.extensionPoints[0].providers` | `[percona-server-mongodb, provider-cloudnative-pg, provider-percona-postgresql, provider-kserve]` | Providers that get the Access tab; it has a Databases section where the engine manages databases |
+| `plugin.extensionPoints[0].providers` | `[percona-server-mongodb, provider-cloudnative-pg, provider-percona-postgresql, provider-kserve, mssql]` | Providers that get the Access tab; it has a Databases section where the engine manages databases |
 | `everestAPIURL` | discovered | Everest API the backend authorizes against |
 
 The chart's ClusterRole lets the backend manage InstanceUsers,
@@ -609,6 +662,8 @@ kubectl apply -f dev/demo-instance-percona-postgresql.yaml
 kubectl apply -f examples/instanceuser-percona-postgresql.yaml
 # API keys, with a provider-kserve model exposed through the AI Gateway:
 kubectl apply -f examples/instanceuser-kserve.yaml
+# SQL Server, with provider-mssql installed and an instance named mssql-users:
+kubectl apply -f examples/instanceuser-mssql.yaml
 ```
 
 `make dev-deploy` needs Docker and installs

@@ -60,6 +60,10 @@ type databasesResponse struct {
 	// Supported tells whether the instance's engine manages databases.
 	Supported bool `json:"supported"`
 	CanManage bool `json:"canManage"`
+	// ConnectChoice tells whether databases may let every user connect
+	// (connect: Public) or only those granted a role; false when the engine
+	// only ever does the latter.
+	ConnectChoice bool `json:"connectChoice"`
 	// DatabaseError explains why databases that exist only in the instance are missing.
 	DatabaseError string `json:"databaseError,omitempty"`
 	// PostgreSQL is set for PostgreSQL instances only.
@@ -217,6 +221,8 @@ func (s *server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp.Supported = true
+	_, onlyGranted := eng.(engine.GrantedConnectEngine)
+	resp.ConnectChoice = !onlyGranted
 	ctx := r.Context()
 	declared, err := s.instanceDatabases(ctx, a.target)
 	if err != nil {

@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/openeverest/plugin-user-management/backend/internal/password"
 )
@@ -217,6 +218,21 @@ type DatabaseEngine interface {
 	// ErrInProgress means the release was started and ReleaseDatabase must be
 	// called again until it returns nil.
 	ReleaseDatabase(ctx context.Context, target Target, name string, drop bool) error
+}
+
+// GrantedConnectEngine is implemented by DatabaseEngines whose databases
+// only ever let their owner and the users granted a role connect: they
+// ignore DesiredDatabase.RestrictConnect.
+type GrantedConnectEngine interface {
+	DatabaseEngine
+	OnlyGrantedConnect()
+}
+
+// Resyncer is implemented by engines whose applied users and databases can
+// be lost without the plugin noticing, e.g. on a failover, so the plugin
+// checks them again every ResyncInterval once they're Ready.
+type Resyncer interface {
+	ResyncInterval() time.Duration
 }
 
 // CredentialKindOf returns how users of the engine authenticate.

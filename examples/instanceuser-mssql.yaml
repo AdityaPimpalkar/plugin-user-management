@@ -1,0 +1,41 @@
+# The owner of an orders database on the mssql-users SQL Server instance, and
+# a reporting user that reads it and monitors the server. The plugin generates
+# their passwords into the Secrets <InstanceUser>-credentials (keys: username,
+# password, uri).
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceUser
+metadata:
+  name: mssql-orders-owner
+  namespace: um-test
+spec:
+  instanceRef:
+    name: mssql-users
+  username: orders_owner
+---
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceDatabase
+metadata:
+  name: mssql-orders
+  namespace: um-test
+spec:
+  instanceRef:
+    name: mssql-users
+  name: orders
+  owner:
+    instanceUserRef:
+      name: mssql-orders-owner
+  deletionPolicy: Delete
+---
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceUser
+metadata:
+  name: mssql-reporting
+  namespace: um-test
+spec:
+  instanceRef:
+    name: mssql-users
+  username: reporting
+  roles:
+    - role: read
+      database: orders
+    - role: monitor

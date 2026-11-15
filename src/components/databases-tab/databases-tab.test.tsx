@@ -29,6 +29,19 @@ describe('DatabaseFormDialog', () => {
     expect(onSubmit).toHaveBeenCalledWith({ name: 'orders', ownerId: 'pg-orders-owner', connect: 'Granted' });
   });
 
+  it('creates databases only granted users connect to when the engine offers no choice', () => {
+    const onSubmit = vi.fn();
+    render(
+      <DatabaseFormDialog owners={owners} connectChoice={false} isSubmitting={false} onSubmit={onSubmit} onClose={vi.fn()} />
+    );
+    expect(screen.queryByText(Messages.whoCanConnect)).toBeNull();
+    fireEvent.change(screen.getByLabelText(Messages.name), { target: { value: 'orders' } });
+    fireEvent.mouseDown(screen.getByRole('combobox'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('orders_owner'));
+    fireEvent.click(screen.getByRole('button', { name: Messages.create }));
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'orders', ownerId: 'pg-orders-owner', connect: 'Granted' });
+  });
+
   it('edits the owner and who can connect, not the name', () => {
     const onSubmit = vi.fn();
     render(

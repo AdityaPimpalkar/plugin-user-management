@@ -247,7 +247,15 @@ func (r *DatabaseReconciler) syncDatabases(ctx context.Context, eng engine.Datab
 				s.pending(err.Error())
 			}
 		}
-		// Deleted databases stay until the instance can be reached to release them.
+		// Deleted databases stay until the instance can be reached to release
+		// them, unless they were never declared and there's nothing to release.
+		for _, db := range deleting {
+			if !db.Status.Declared {
+				if err := removeFinalizer(ctx, r.Client, db, DatabaseFinalizer); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+		}
 		return ctrl.Result{RequeueAfter: pendingRequeue}, nil
 	}
 	existing := map[string]engine.Database{}

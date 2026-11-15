@@ -396,6 +396,25 @@ func TestDatabaseNotReady(t *testing.T) {
 	}
 }
 
+func TestDatabaseNotReadyReleasesUndeclaredUser(t *testing.T) {
+	never := dbUser("never", "never", readShop)
+	never.Finalizers = []string{Finalizer}
+	h := newHarness(t, instance("percona-server-mongodb"), never)
+	if err := h.client.Delete(context.Background(), h.get("never")); err != nil {
+		t.Fatal(err)
+	}
+	h.engine.listErr = engine.ErrNotReady
+
+	h.reconcile()
+	err := h.client.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: "never"}, &v1alpha1.InstanceUser{})
+	if !apierrors.IsNotFound(err) {
+		t.Errorf("undeclared user not released: %v", err)
+	}
+	if len(h.engine.dropped) != 0 {
+		t.Errorf("dropped = %v", h.engine.dropped)
+	}
+}
+
 func TestInstanceGone(t *testing.T) {
 	deleted := dbUser("old", "old", readShop)
 	deleted.Status.Declared = true

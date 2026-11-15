@@ -264,6 +264,27 @@ func TestDatabaseEngineErrors(t *testing.T) {
 	}
 }
 
+func TestDatabaseNotReadyReleasesOnlyUndeclared(t *testing.T) {
+	undeclared := deletingDatabase(instanceDatabase("never", "never", "o"), v1alpha1.DeletionPolicyDelete)
+	undeclared.Status.Declared = false
+	h := newDBHarness(t, instance("provider-cloudnative-pg"),
+		owner("o", "o", "mongo", v1alpha1.PhaseReady),
+		undeclared,
+		deletingDatabase(instanceDatabase("old", "old", "o"), v1alpha1.DeletionPolicyDelete))
+	h.engine.listDBErr = errors.Join(engine.ErrNotReady, errors.New("unsupported topology"))
+
+	h.reconcile()
+	if err := h.client.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: "never"}, &v1alpha1.InstanceDatabase{}); !apierrors.IsNotFound(err) {
+		t.Errorf("undeclared database not released: %v", err)
+	}
+	if err := h.client.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: "old"}, &v1alpha1.InstanceDatabase{}); err != nil {
+		t.Errorf("declared database released before the instance could be reached: %v", err)
+	}
+	if len(h.engine.released) != 0 {
+		t.Errorf("released = %+v", h.engine.released)
+	}
+}
+
 func TestDatabaseUnsupportedProvider(t *testing.T) {
 	h := newDBHarness(t, instance("percona-server-mongodb"),
 		owner("o", "o", "mongo", v1alpha1.PhaseReady),

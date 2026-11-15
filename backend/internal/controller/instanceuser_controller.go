@@ -293,7 +293,15 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 				s.pending(err.Error())
 			}
 		}
-		// Deleted users stay until the database can be reached to drop them.
+		// Deleted users stay until the database can be reached to drop them,
+		// unless they were never declared and there's nothing to drop.
+		for _, u := range deleting {
+			if !u.Status.Declared {
+				if err := removeFinalizer(ctx, r.Client, u, Finalizer); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+		}
 		return ctrl.Result{RequeueAfter: pendingRequeue}, nil
 	}
 	existing := map[string]engine.User{}

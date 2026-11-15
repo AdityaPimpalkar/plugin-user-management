@@ -241,6 +241,32 @@ func TestRolesChangeUntilApplied(t *testing.T) {
 	}
 }
 
+type problemEngine struct {
+	*fakeEngine
+	problem string
+}
+
+func (p *problemEngine) UserProblem(engine.Target, string) string { return p.problem }
+
+func TestUserProblemKeepsMatchingUserPending(t *testing.T) {
+	u := dbUser("app", "app", readShop)
+	u.Status.Declared = true
+	h := newHarness(t, instance("percona-server-mongodb"), u)
+	eng := &problemEngine{fakeEngine: h.engine, problem: "password rejected"}
+	h.r.Engines["percona-server-mongodb"] = eng
+	h.engine.dbUsers = []engine.User{{Username: "app", Database: "admin", Roles: []engine.RoleGrant{{Role: "read", Database: "shop"}}}}
+	h.reconcile()
+	if s := h.get("app").Status; s.Phase != v1alpha1.PhasePending || s.Message != "password rejected" {
+		t.Errorf("status = %+v, want Pending with the engine's problem", s)
+	}
+
+	eng.problem = ""
+	h.reconcile()
+	if s := h.get("app").Status; s.Phase != v1alpha1.PhaseReady {
+		t.Errorf("status = %+v, want Ready once applied", s)
+	}
+}
+
 func TestKeepsDeletingUserUntilDropped(t *testing.T) {
 	deleted := dbUser("old", "old", readShop)
 	deleted.Status.Declared = true

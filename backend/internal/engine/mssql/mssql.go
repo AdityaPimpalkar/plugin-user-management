@@ -419,10 +419,18 @@ func inProgress(err error, what string) error {
 // PendingReason implements engine.PendingReasoner. Without a problem, the
 // login was just applied and shows up on the next reconcile.
 func (e *Engine) PendingReason(_ context.Context, target engine.Target, username string) string {
+	if problem := e.UserProblem(target, username); problem != "" {
+		return problem
+	}
+	return "applying the user in SQL Server"
+}
+
+// UserProblem implements engine.UserProblemReporter.
+func (e *Engine) UserProblem(target engine.Target, username string) string {
 	if v, ok := e.problems.Load(userKey(target, username)); ok {
 		return v.(string)
 	}
-	return "applying the user in SQL Server"
+	return ""
 }
 
 // ConnectionURI implements engine.Engine. It connects to the primary, as

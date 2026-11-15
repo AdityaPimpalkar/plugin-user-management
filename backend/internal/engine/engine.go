@@ -123,6 +123,14 @@ type PendingReasoner interface {
 	PendingReason(ctx context.Context, target Target, username string) string
 }
 
+// UserProblemReporter is implemented by engines that can fail to apply part
+// of a user whose roles already match, e.g. a password the database rejects.
+type UserProblemReporter interface {
+	// UserProblem returns why the user couldn't be applied in the last
+	// SyncUsers, or "" when it was applied.
+	UserProblem(target Target, username string) string
+}
+
 // CredentialKind tells how users of an engine authenticate.
 type CredentialKind string
 

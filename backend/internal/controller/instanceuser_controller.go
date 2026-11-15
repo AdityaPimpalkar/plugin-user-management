@@ -334,6 +334,8 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 		switch dbUser, found := existing[s.user.Spec.Username]; {
 		case s.waiting != "":
 			s.pending(s.waiting)
+		case userProblem(eng, target, s.user.Spec.Username) != "":
+			s.pending(userProblem(eng, target, s.user.Spec.Username))
 		case found && engine.SameRoles(dbUser.Roles, s.roles):
 			s.phase = v1alpha1.PhaseReady
 		default:
@@ -373,6 +375,13 @@ func pendingMessage(ctx context.Context, eng engine.Engine, target engine.Target
 		}
 	}
 	return "waiting for the operator to apply the user"
+}
+
+func userProblem(eng engine.Engine, target engine.Target, username string) string {
+	if reporter, ok := eng.(engine.UserProblemReporter); ok {
+		return reporter.UserProblem(target, username)
+	}
+	return ""
 }
 
 func usernameDeclared(users []engine.DesiredUser, username string) bool {

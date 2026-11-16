@@ -1,0 +1,272 @@
+# Tiltfile for developing plugin-user-management.
+#
+# Installs the released OpenEverest v2 core, then builds this plugin's frontend
+# bundle + backend image and deploys the plugin chart, rebuilding on change.
+# Database providers are opt-in (see dev/.env.example): the Access tab only
+# shows up on instances of an installed provider. You do NOT need a local
+# checkout of the core.
+#
+# Usage:
+#   make dev-up            # create the k3d cluster and run `tilt up`
+#   tilt up -f dev/Tiltfile
+#
+# To develop against a core built from source, set INSTALL_OPENEVEREST=false
+# and run the core in a separate Tilt instance.
+
+# ===========================
+# Utilities
+# ===========================
+def str2bool(v):
+    return str(v).lower() in ("yes", "true", "t", "1")
+
+# ===========================
+# Settings
+# ===========================
+# The OpenEverest core and provider charts install CRDs and several workloads;
+# 30s (the default) is not enough when images are not cached on a cold start.
+update_settings(k8s_upsert_timeout_secs=180)
+
+# ===========================
+# Configuration (.env)
+# ===========================
+load('ext://dotenv', 'dotenv')
+local_env_file = '{0}/.env'.format(config.main_dir)
+if os.path.exists(local_env_file):
+    print('Loading local .env file={0}'.format(local_env_file))
+    dotenv(fn=local_env_file)
+
+# Whether to install the released OpenEverest core. Set to false when you run
+# the core from source in a separate Tilt instance.
+install_openeverest = str2bool(os.getenv('INSTALL_OPENEVEREST', 'true'))
+
+# Released OpenEverest core version to install. Empty means the latest
+# release, pre-releases included (--devel), since v2 is in pre-release.
+openeverest_version = os.getenv('OPENEVEREST_VERSION', '')
+
+# Helm repository that hosts the OpenEverest core chart.
+openeverest_helm_repo = os.getenv('OPENEVEREST_HELM_REPO') or 'https://openeverest.github.io/helm-charts/'
+
+# Namespace of the core, the plugin and the providers.
+everest_namespace = os.getenv('EVEREST_NAMESPACE') or 'everest-system'
+
+# Command that builds the ESM frontend bundle into dist/main.js.
+frontend_build_cmd = os.getenv('FRONTEND_BUILD_CMD') or '[ -d node_modules ] || npm ci; npm run build'
+
+# Optional override for the Everest API URL the backend authorizes against.
+# Empty uses the chart default (discovered).
+everest_api_url = os.getenv('EVEREST_API_URL', '')
+
+# Initial admin password for the Everest UI/API.
+ui_admin_password = os.getenv('UI_ADMIN_PASSWORD') or 'admin'
+
+# Database providers, all opt-in. <NAME>_VERSION empty means the latest chart.
+openeverest_providers = [
+    # (env prefix, chart name)
+    ('PSMDB', 'provider-percona-server-mongodb'),
+    ('CNPG', 'provider-cloudnative-pg'),
+    ('PERCONA_PG', 'provider-percona-postgresql'),
+]
+
+# provider-mssql lives in Solanica's private registry: its chart and the
+# provider and operator images need credentials (a GitHub token with
+# read:packages that can read solanicaio packages).
+install_mssql = str2bool(os.getenv('INSTALL_PROVIDER_MSSQL', 'false'))
+mssql_version = os.getenv('PROVIDER_MSSQL_VERSION', '')
+registry_server = os.getenv('REGISTRY_SERVER') or 'ghcr.io'
+registry_username = os.getenv('REGISTRY_USERNAME', '')
+registry_password = os.getenv('REGISTRY_PASSWORD', '')
+mssql_pull_secret = os.getenv('MSSQL_PULL_SECRET_NAME') or 'solanica-registry'
+if install_mssql and (registry_username == '' or registry_password == ''):
+    fail('INSTALL_PROVIDER_MSSQL=true needs REGISTRY_USERNAME and REGISTRY_PASSWORD (see dev/.env.example)')
+
+# ===========================
+# Paths
+# ===========================
+plugin_dir = os.path.realpath('{0}/..'.format(config.main_dir))
+chart_dir = '{0}/charts/plugin-user-management'.format(plugin_dir)
+print('Using plugin dir: {0}'.format(plugin_dir))
+
+# ===========================
+# External cluster / registry
+# ===========================
+k8s_context = os.getenv('K8S_CONTEXT', '')
+if k8s_context:
+    print('Using Kubernetes context: {0}'.format(k8s_context))
+    allow_k8s_contexts(k8s_context)
+
+docker_registry_url = os.getenv('DOCKER_REGISTRY_URL', '')
+if docker_registry_url:
+    print('Using Docker registry URL: {0}'.format(docker_registry_url))
+    default_registry(docker_registry_url)
+
+# ===========================
+# Extensions
+# ===========================
+load('ext://helm_resource', 'helm_resource', 'helm_repo')
+
+# ===========================
+# OpenEverest core (released)
+# ===========================
+# Installed with a real `helm upgrade --install` (via the helm_resource
+# extension) so that the core CRDs bundled in the chart, including the Plugin
+# and Instance CRDs, are applied correctly.
+core_deps = []
+if install_openeverest:
+    helm_repo(
+        'openeverest-repo',
+        openeverest_helm_repo,
+        labels=['openeverest'],
+    )
+
+    core_flags = [
+        '--create-namespace',
+        '--set', 'server.initialAdminPassword={0}'.format(ui_admin_password),
+        '--set', 'telemetry=false',
+        '--set', 'upgrade.preflightChecks=false',
+        # Keep the dev install lean: skip kube-state-metrics and default
+        # monitoring resources, but keep the victoria-metrics-operator subchart
+        # (its CRDs are watched at startup) by scaling it to 0.
+        '--set', 'kube-state-metrics.enabled=false',
+        '--set', 'monitoring.replicaCount=0',
+        '--set', 'createMonitoringResources=false',
+    ]
+    if openeverest_version:
+        core_flags = core_flags + ['--version', openeverest_version]
+    else:
+        core_flags = core_flags + ['--devel']
+
+    helm_resource(
+        'openeverest',
+        'openeverest-repo/openeverest',
+        release_name='everest',
+        namespace=everest_namespace,
+        flags=core_flags,
+        port_forwards=[port_forward(8080, 8080, 'Everest UI/API')],
+        resource_deps=['openeverest-repo'],
+        labels=['openeverest'],
+    )
+    core_deps = ['openeverest']
+
+# ===========================
+# Database providers (opt-in)
+# ===========================
+for prefix, chart in openeverest_providers:
+    if not str2bool(os.getenv('INSTALL_' + prefix, 'false')):
+        continue
+    flags = []
+    version = os.getenv(prefix + '_VERSION', '')
+    if version:
+        flags = ['--version', version]
+    helm_resource(
+        chart,
+        'oci://ghcr.io/openeverest/charts/{0}'.format(chart),
+        namespace=everest_namespace,
+        flags=flags,
+        resource_deps=core_deps,
+        labels=['providers'],
+    )
+
+if install_mssql:
+    # The credentials are read from the environment at run time, not embedded
+    # in the command, so they don't show up in Tilt's logs.
+    local_resource(
+        'provider-mssql-registry',
+        cmd=(
+            'echo "$REGISTRY_PASSWORD" | helm registry login {server} ' +
+            '-u "$REGISTRY_USERNAME" --password-stdin && ' +
+            'kubectl create namespace {ns} --dry-run=client -o yaml | kubectl apply -f - && ' +
+            'kubectl create secret docker-registry {name} --docker-server={server} ' +
+            '--docker-username="$REGISTRY_USERNAME" --docker-password="$REGISTRY_PASSWORD" ' +
+            '-n {ns} --dry-run=client -o yaml | kubectl apply -f -'
+        ).format(server=registry_server, ns=everest_namespace, name=mssql_pull_secret),
+        labels=['providers'],
+    )
+    mssql_flags = [
+        '--set', 'imagePullSecrets[0].name={0}'.format(mssql_pull_secret),
+        '--set', 'operator.manager.imagePullSecrets[0].name={0}'.format(mssql_pull_secret),
+        # No cert-manager in the dev cluster: run the operator without its
+        # admission webhooks.
+        '--set', 'operator.certManager.enabled=false',
+        '--set', 'operator.webhook.enabled=false',
+        '--set', 'operator.manager.envOverrides.ENABLE_WEBHOOKS=false',
+    ]
+    if mssql_version:
+        mssql_flags = mssql_flags + ['--version', mssql_version]
+    helm_resource(
+        'provider-mssql',
+        'oci://{0}/solanicaio/charts/provider-mssql'.format(registry_server),
+        namespace=everest_namespace,
+        flags=mssql_flags,
+        resource_deps=core_deps + ['provider-mssql-registry'],
+        labels=['providers'],
+    )
+
+# ===========================
+# Plugin: CRDs
+# ===========================
+# Helm installs crds/ on the first install only and never upgrades them, so
+# apply them on every change (server-side, taking over Helm's fields).
+local_resource(
+    'plugin-crds',
+    'kubectl apply --server-side --force-conflicts -f {0}/crds'.format(chart_dir),
+    deps=['{0}/crds'.format(chart_dir)],
+    labels=['plugin'],
+)
+
+# ===========================
+# Plugin: frontend bundle
+# ===========================
+# The backend embeds dist/main.js (go:embed), so the bundle must exist before
+# the image is built. Rebuilt on any change under src/.
+local_resource(
+    'plugin-frontend',
+    'cd {0} && ({1})'.format(plugin_dir, frontend_build_cmd),
+    deps=[
+        '{0}/src'.format(plugin_dir),
+        '{0}/package.json'.format(plugin_dir),
+        '{0}/vite.config.ts'.format(plugin_dir),
+        '{0}/tsconfig.json'.format(plugin_dir),
+    ],
+    labels=['plugin'],
+)
+
+# ===========================
+# Plugin: backend image
+# ===========================
+# The Dockerfile compiles the Go backend and embeds the pre-built bundle.
+# `only` scopes the context so unrelated edits don't trigger a rebuild.
+plugin_image = 'ghcr.io/openeverest/plugin-user-management:tilt-dev'
+docker_build(
+    plugin_image,
+    context=plugin_dir,
+    dockerfile='{0}/Dockerfile'.format(plugin_dir),
+    only=[
+        'backend',
+        'dist/main.js',
+    ],
+    ignore=['backend/**/*_test.go'],
+)
+
+# ===========================
+# Plugin: Helm chart
+# ===========================
+# Tilt injects the locally built image into image.repository/image.tag.
+# helm_resource also guarantees the Plugin CR is applied only after the core
+# CRDs exist.
+plugin_flags = [
+    '--create-namespace',
+    '--set', 'image.pullPolicy=IfNotPresent',
+]
+if everest_api_url:
+    plugin_flags = plugin_flags + ['--set', 'everestAPIURL={0}'.format(everest_api_url)]
+
+helm_resource(
+    'plugin-user-management',
+    chart_dir,
+    namespace=everest_namespace,
+    flags=plugin_flags,
+    image_deps=[plugin_image],
+    image_keys=[('image.repository', 'image.tag')],
+    resource_deps=['plugin-frontend', 'plugin-crds'] + core_deps,
+    labels=['plugin'],
+)

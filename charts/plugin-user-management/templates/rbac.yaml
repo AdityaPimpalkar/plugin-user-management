@@ -62,6 +62,16 @@ rules:
   - apiGroups: ["mssql.solanica.io"]
     resources: ["mssqlavailabilitygroups", "mssqlinstances"]
     verbs: ["get"]
+  # Valkey: users are declared in the ValkeyCluster's spec.acl.users
+  # (server-side apply under the plugin's own field manager). The operator
+  # renders them into Secret internal-<instance>-acl; the ValkeyNodes tell
+  # which revision of it each Valkey node has loaded.
+  - apiGroups: ["valkey.io"]
+    resources: ["valkeyclusters"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["valkey.io"]
+    resources: ["valkeynodes"]
+    verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

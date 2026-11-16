@@ -23,6 +23,7 @@ Supported providers:
 | `provider-percona-postgresql` | Percona Operator for PostgreSQL, through SQL as the operator's `postgres` superuser |
 | `provider-kserve` | API keys for models on the Envoy AI Gateway, through the provider's key Secrets |
 | `mssql` | Microsoft SQL Server (Solanica MSSQL operator), through T-SQL as `sa` |
+| `valkey` | Valkey (valkey-operator 0.9+), through the `ValkeyCluster`'s `spec.acl.users` |
 
 ## InstanceUser
 
@@ -67,7 +68,9 @@ See [examples/instanceuser.yaml](examples/instanceuser.yaml) (MongoDB),
 [examples/instanceuser-postgresql.yaml](examples/instanceuser-postgresql.yaml)
 (CloudNativePG),
 [examples/instanceuser-percona-postgresql.yaml](examples/instanceuser-percona-postgresql.yaml)
-(Percona PostgreSQL) and
+(Percona PostgreSQL),
+[examples/instanceuser-valkey.yaml](examples/instanceuser-valkey.yaml)
+(Valkey) and
 [examples/instanceuser-kserve.yaml](examples/instanceuser-kserve.yaml)
 (an API key for a model).
 
@@ -419,6 +422,46 @@ InstanceDatabases, in T-SQL:
   login; while it owns a database, it stays `Deleting` with the reason.
 - The connection string is `sqlserver://<user>:<password>@<host>:1433`,
   like the Instance's own connection details.
+
+### Valkey engine
+
+- Declares the users in the `ValkeyCluster` (named after the Instance)
+  `spec.acl.users`, with server-side apply under the field manager
+  `plugin-user-management`. The list is keyed by name and the provider only
+  applies its `default` user, so they don't conflict. The password is
+  referenced from the user's Secret; the operator hashes it into the ACL
+  file it renders (Secret `internal-<instance>-acl`) and every Valkey node
+  loads that file with `ACL LOAD`, so users removed from the list are
+  deleted.
+- The operator only watches its own Secrets, so the plugin also sets the
+  annotation `plugin-user-management.plugins.openeverest.io/passwords` (a
+  digest of the users' password hashes): a changed password changes it and
+  the operator renders the file again.
+- A user whose password Secret or key is missing is left out of the list
+  and stays `Pending` with the reason, because the operator would otherwise
+  stop rendering the file for every user.
+- Reports status without connecting to Valkey: a user is `Ready` once its
+  entry is in the rendered file and every ready ValkeyNode reports that
+  revision as loaded (`status.appliedACLRevision`). Until then it's
+  `Pending` with how many nodes are left, or with the operator's `Degraded`
+  message. Deleted users are `Deleting` until every node has loaded a file
+  without them.
+- Roles, on all keys and channels, never with `@admin` or `@dangerous`
+  commands (`KEYS`, `FLUSHALL`, `CONFIG`, `DEBUG`, ...):
+  - `read`: the `@read` commands on all keys (`~*`);
+  - `readWrite`: `@read`, `@write`, `@transaction` and `@scripting` on all
+    keys;
+  - `pubsub`: the `@pubsub` commands on all channels (`&*`).
+
+  Every role includes `@connection` and the cluster commands clients need
+  to follow the slot map (`CLUSTER SLOTS|SHARDS|NODES|INFO|MYID`, `ASKING`,
+  `READONLY`, `READWRITE`). Roles take no database.
+- `default` and names starting with `_` (the operator's `_operator`,
+  `_exporter`, `_replication`) are system users.
+- The connection string is `redis://<user>:<password>@<host>:<port>`, or
+  `rediss://` with TLS, where the credentials Secret also gets `ssl` and
+  `ca.crt`. With TLS `clientAuth: Required`, Valkey also asks for a client
+  certificate, which plugin users don't have: they can't connect.
 
 ### KServe engine (API keys for models)
 

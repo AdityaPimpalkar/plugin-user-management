@@ -643,7 +643,26 @@ make build-frontend   # dist/main.js
 make docker-build IMG=<registry>/plugin-user-management:dev
 ```
 
-### Testing on a cluster
+### Local cluster with Tilt
+
+Needs Docker, [k3d](https://k3d.io), [Tilt](https://tilt.dev), Helm and Node.
+
+```bash
+cp dev/.env.example dev/.env   # optional: enable providers, pin versions
+make dev-up                    # k3d cluster + tilt up
+```
+
+Tilt installs the released OpenEverest core (UI/API on
+http://localhost:8080, `admin`/`admin`), applies the plugin CRDs, builds
+`dist/main.js` and the image, and deploys the chart. It rebuilds on changes to
+`src/`, `backend/` and the CRDs. Providers are off by default; enable them with
+`INSTALL_PSMDB`, `INSTALL_CNPG`, `INSTALL_PERCONA_PG` or
+`INSTALL_PROVIDER_MSSQL` in `dev/.env`. SQL Server also needs registry
+credentials, see [dev/.env.example](dev/.env.example). Then apply the demo
+instances and examples below. `make dev-down` stops Tilt's resources and
+`make dev-destroy` deletes the cluster.
+
+### Testing on a remote cluster
 
 With OpenEverest and a supported provider installed on the cluster of your
 current kubeconfig context:

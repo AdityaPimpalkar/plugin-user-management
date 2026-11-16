@@ -1,0 +1,28 @@
+# Users of the valkey-users Valkey instance: an application that reads and
+# writes keys and publishes events, and a cache reader. The plugin generates
+# their passwords into the Secrets <InstanceUser>-credentials (keys: username,
+# password, uri, and ssl and ca.crt when the instance has TLS).
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceUser
+metadata:
+  name: valkey-orders
+  namespace: um-test
+spec:
+  instanceRef:
+    name: valkey-users
+  username: orders
+  roles:
+    - role: readWrite
+    - role: pubsub
+---
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceUser
+metadata:
+  name: valkey-reader
+  namespace: um-test
+spec:
+  instanceRef:
+    name: valkey-users
+  username: reader
+  roles:
+    - role: read

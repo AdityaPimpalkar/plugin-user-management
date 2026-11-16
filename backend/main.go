@@ -40,6 +40,7 @@ import (
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/mssql"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/perconapg"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/pgext"
+	"github.com/openeverest/plugin-user-management/backend/internal/engine/valkey"
 )
 
 // dist/main.js is copied from the frontend build during the Docker build.
@@ -188,6 +189,7 @@ func main() {
 		perconapg.ProviderName: perconapg.New(kube, dyn, extensionPolicy()),
 		kserve.ProviderName:    kserve.New(kube, dyn),
 		mssql.ProviderName:     mssql.New(kube, dyn),
+		valkey.ProviderName:    valkey.New(kube, dyn),
 	}
 
 	mgr, err := newManager(cfg)

@@ -13,6 +13,7 @@ const SUPPORTED_PROVIDERS = [
   'provider-percona-postgresql',
   'provider-kserve',
   'mssql',
+  'valkey',
 ];
 
 const register: PluginRegisterFn = (api) => {

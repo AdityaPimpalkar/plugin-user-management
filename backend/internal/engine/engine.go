@@ -26,6 +26,9 @@ type Role struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Scope       RoleScope `json:"scope"`
+	// Includes are roles this one grants too, on the same database. The UI
+	// rejects granting them next to it, as NormalizeRoles would drop them.
+	Includes []string `json:"includes,omitempty"`
 }
 
 // RoleGrant is a role granted to a user, on a database for ScopeDatabase roles.

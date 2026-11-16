@@ -161,6 +161,26 @@ func TestNormalizeRoles(t *testing.T) {
 	}
 }
 
+// The UI rejects a role next to one that includes it on the same database:
+// those are exactly the roles normalizeRoles drops.
+func TestRoleIncludesMatchNormalize(t *testing.T) {
+	for _, r := range roleCatalog {
+		for _, other := range roleCatalog {
+			if r.Name == other.Name || r.Scope != engine.ScopeDatabase || other.Scope != engine.ScopeDatabase {
+				continue
+			}
+			got, err := normalizeRoles([]engine.RoleGrant{{Role: r.Name, Database: "orders"}, {Role: other.Name, Database: "orders"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			kept := []engine.RoleGrant{{Role: r.Name, Database: "orders"}}
+			if slices.Contains(r.Includes, other.Name) != reflect.DeepEqual(got, kept) {
+				t.Errorf("%s with %s = %v, but %s includes %v", r.Name, other.Name, got, r.Name, r.Includes)
+			}
+		}
+	}
+}
+
 func TestValidateUser(t *testing.T) {
 	for _, name := range []string{"sa", "SA", "openeverest_managed", "##MS_Agent##", `DOMAIN\user`, "NT SERVICE\\x", strings.Repeat("a", 129)} {
 		if err := validateUser(engine.DesiredUser{Username: name}); !errors.Is(err, engine.ErrInvalid) {

@@ -25,8 +25,8 @@ const (
 // would let anyone who can use the plugin take over the server.
 var roleCatalog = []engine.Role{
 	{Name: roleRead, Scope: engine.ScopeDatabase, Description: "Connect to the database and read all its tables and views (db_datareader)."},
-	{Name: roleReadWrite, Scope: engine.ScopeDatabase, Description: "Connect to the database, read, insert, update and delete rows in all its tables (db_datareader and db_datawriter)."},
-	{Name: roleDBOwner, Scope: engine.ScopeDatabase, Description: "Do anything in the database, including changing its schema and its users' permissions (db_owner)."},
+	{Name: roleReadWrite, Scope: engine.ScopeDatabase, Description: "Connect to the database, read, insert, update and delete rows in all its tables (db_datareader and db_datawriter).", Includes: []string{roleRead}},
+	{Name: roleDBOwner, Scope: engine.ScopeDatabase, Description: "Do anything in the database, including changing its schema and its users' permissions (db_owner).", Includes: []string{roleRead, roleReadWrite}},
 	{Name: roleMonitor, Scope: engine.ScopeCluster, Description: "Read server state and the definitions of all objects, as monitoring tools need (VIEW SERVER STATE and VIEW ANY DEFINITION)."},
 }
 

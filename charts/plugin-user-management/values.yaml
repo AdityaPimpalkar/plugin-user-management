@@ -32,6 +32,7 @@ plugin:
         - provider-percona-postgresql
         - provider-kserve
         - mssql
+        - valkey
 
 # PostgreSQL options of databases (InstanceDatabase spec.postgresql).
 postgresql:

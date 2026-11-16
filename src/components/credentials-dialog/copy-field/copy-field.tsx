@@ -4,6 +4,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { Messages } from '../credentials-dialog.messages';
 
 const COPIED_FEEDBACK_MS = 1500;
+// Rows shown of a multi-line value, such as a PEM certificate, before it scrolls.
+const MAX_ROWS = 6;
 
 interface CopyFieldProps {
   label: string;
@@ -12,6 +14,8 @@ interface CopyFieldProps {
 
 export const CopyField = ({ label, value }: CopyFieldProps) => {
   const [copied, setCopied] = useState(false);
+  // A single-line input drops line breaks from what it shows.
+  const multiline = value.includes('\n');
 
   const copy = async () => {
     await navigator.clipboard.writeText(value);
@@ -25,6 +29,8 @@ export const CopyField = ({ label, value }: CopyFieldProps) => {
       label={label}
       value={value}
       fullWidth
+      multiline={multiline}
+      maxRows={multiline ? MAX_ROWS : undefined}
       slotProps={{
         input: {
           readOnly: true,

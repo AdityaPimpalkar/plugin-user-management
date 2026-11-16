@@ -36,6 +36,26 @@ export const canAddRoleRow = (rows: RoleGrantDraft[], roles: Role[]) =>
 const isDatabaseScoped = (roles: Role[], name: string) =>
   findRole(roles, name)?.scope === 'database';
 
+// The database a row grants its role on; instance-wide roles have none.
+const grantDatabase = (roles: Role[], { role, database }: RoleGrantDraft) =>
+  isDatabaseScoped(roles, role) ? database.trim() : '';
+
+// Why a row adds nothing to the others: it repeats an earlier row, or another
+// row's role already includes it. The backend would drop it silently.
+const redundantRoleError = (roles: Role[], rows: RoleGrantDraft[], index: number) => {
+  const row = rows[index];
+  const database = grantDatabase(roles, row);
+  const sameDatabase = (other: RoleGrantDraft, i: number) =>
+    i !== index && !!other.role && grantDatabase(roles, other) === database;
+  if (rows.some((other, i) => i < index && sameDatabase(other, i) && other.role === row.role)) {
+    return Messages.roleDuplicate;
+  }
+  const including = rows.find(
+    (other, i) => sameDatabase(other, i) && findRole(roles, other.role)?.includes?.includes(row.role)
+  );
+  return including ? Messages.roleIncluded(including.role) : undefined;
+};
+
 // Engine-specific rules (allowed names, reserved databases) are enforced by the
 // backend; these checks only catch what every engine rejects.
 export const validateUserForm = (
@@ -57,8 +77,8 @@ export const validateUserForm = (
   if (rolesRequired && values.roles.length === 0) {
     errors.roles = Messages.rolesRequired;
   }
-  errors.roleRows = values.roles.map(({ role, database }) => ({
-    role: role ? undefined : Messages.roleRequired,
+  errors.roleRows = values.roles.map(({ role, database }, index) => ({
+    role: role ? redundantRoleError(roles, values.roles, index) : Messages.roleRequired,
     database:
       isDatabaseScoped(roles, role) && !database.trim() ? Messages.databaseRequired : undefined,
   }));

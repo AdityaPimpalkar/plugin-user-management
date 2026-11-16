@@ -4,6 +4,8 @@ export interface Role {
   name: string;
   description: string;
   scope: RoleScope;
+  // Roles this one grants too, on the same database.
+  includes?: string[];
 }
 
 export interface RoleGrant {

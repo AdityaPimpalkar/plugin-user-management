@@ -46,6 +46,11 @@ export const Messages = {
   ownerHelper: 'Owns the database and the tables it creates. Run migrations as this user.',
   ownerRequired: 'Choose the owner.',
   noOwners: 'Create the owner in Users first; it needs no roles.',
+  newOwner: 'New user…',
+  newOwnerName: 'Owner username',
+  newOwnerHelper:
+    'Created with no roles along with the database. Its credentials are shown once both are created.',
+  newOwnerRequired: 'Enter a username.',
   whoCanConnect: 'Who can connect',
   extensions: 'Extensions',
   extensionsHelper:

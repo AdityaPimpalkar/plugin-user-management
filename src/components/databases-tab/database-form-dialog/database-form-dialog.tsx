@@ -19,7 +19,7 @@ import {
   Typography,
 } from '@mui/material';
 import { DatabaseConnect, NewDatabase, PostgreSQLExtension } from 'types/databases.types';
-import { OwnerOption } from '../databases-tab.types';
+import { NEW_OWNER, OwnerOption } from '../databases-tab.types';
 import { validateDatabaseForm } from '../databases-tab.utils';
 import { Messages } from '../databases-tab.messages';
 
@@ -36,9 +36,12 @@ interface DatabaseFormDialogProps {
   extensions?: PostgreSQLExtension[];
   // Why the extensions can't be listed.
   extensionsError?: string;
+  // Offers creating the owner along with the database, as a user with no roles.
+  canCreateOwner?: boolean;
   isSubmitting: boolean;
   error?: string;
-  onSubmit: (database: NewDatabase) => void;
+  // newOwner is the username of the owner to create first, if any.
+  onSubmit: (database: NewDatabase, newOwner?: string) => void;
   onClose: () => void;
 }
 
@@ -48,22 +51,28 @@ export const DatabaseFormDialog = ({
   connectChoice = true,
   extensions,
   extensionsError,
+  canCreateOwner = false,
   isSubmitting,
   error,
   onSubmit,
   onClose,
 }: DatabaseFormDialogProps) => {
   const isCreate = !initial;
-  const [values, setValues] = useState<NewDatabase>(
-    () =>
-      initial ?? {
-        name: '',
-        ownerId: owners.length === 1 ? owners[0].id : '',
-        connect: connectChoice ? 'Public' : 'Granted',
-      }
-  );
+  const offerNewOwner = isCreate && canCreateOwner;
+  const [values, setValues] = useState<NewDatabase>(() => {
+    if (initial) {
+      return initial;
+    }
+    let ownerId = owners.length === 1 ? owners[0].id : '';
+    if (owners.length === 0 && offerNewOwner) {
+      ownerId = NEW_OWNER;
+    }
+    return { name: '', ownerId, connect: connectChoice ? 'Public' : 'Granted' };
+  });
+  const [newOwner, setNewOwner] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const errors = validateDatabaseForm(values, isCreate);
+  const isNewOwner = offerNewOwner && values.ownerId === NEW_OWNER;
+  const errors = validateDatabaseForm(values, isCreate, isNewOwner ? newOwner : undefined);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -72,11 +81,17 @@ export const DatabaseFormDialog = ({
       return;
     }
     const { postgresql, ...rest } = values;
-    onSubmit({
+    const database = {
       ...rest,
+      ownerId: isNewOwner ? '' : values.ownerId,
       name: values.name.trim(),
       ...(extensions ? { postgresql: { extensions: postgresql?.extensions ?? [] } } : {}),
-    });
+    };
+    if (isNewOwner) {
+      onSubmit(database, newOwner.trim());
+    } else {
+      onSubmit(database);
+    }
   };
 
   return (
@@ -104,15 +119,26 @@ export const DatabaseFormDialog = ({
               onChange={(e) => setValues((v) => ({ ...v, ownerId: e.target.value }))}
               error={submitted && !!errors.ownerId}
               helperText={(submitted && errors.ownerId) || Messages.ownerHelper}
-              disabled={owners.length === 0}
+              disabled={owners.length === 0 && !offerNewOwner}
             >
               {owners.map((o) => (
                 <MenuItem key={o.id} value={o.id}>
                   {o.username}
                 </MenuItem>
               ))}
+              {offerNewOwner && <MenuItem value={NEW_OWNER}>{Messages.newOwner}</MenuItem>}
             </TextField>
-            {owners.length === 0 && <Alert severity="info">{Messages.noOwners}</Alert>}
+            {isNewOwner && (
+              <TextField
+                size="small"
+                label={Messages.newOwnerName}
+                value={newOwner}
+                onChange={(e) => setNewOwner(e.target.value)}
+                error={submitted && !!errors.newOwner}
+                helperText={(submitted && errors.newOwner) || Messages.newOwnerHelper}
+              />
+            )}
+            {owners.length === 0 && !offerNewOwner && <Alert severity="info">{Messages.noOwners}</Alert>}
             {connectChoice && (
               <FormControl>
                 <FormLabel id="database-connect">{Messages.whoCanConnect}</FormLabel>

@@ -10,6 +10,9 @@ export type DatabasesDialogState =
   | { kind: DatabaseAction; database: ManagedDatabase }
   | null;
 
+// The owner picker's value for a user created along with the database.
+export const NEW_OWNER = '\u0000new-owner';
+
 export interface OwnerOption {
   id: string;
   username: string;

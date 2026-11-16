@@ -2,7 +2,11 @@ import { useMemo, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import { useCreateDatabase, useDatabases, useDeleteDatabase, useUpdateDatabase } from 'hooks/useDatabases';
-import { useUsers } from 'hooks/useUsers';
+import { useCreateUser, useUsers } from 'hooks/useUsers';
+import { CredentialsDialog } from 'components/credentials-dialog/credentials-dialog';
+import { useTerms } from 'components/terms-context/terms.context';
+import { Credentials } from 'types/users.types';
+import { NewDatabase } from 'types/databases.types';
 import { DatabasesTable } from './databases-table/databases-table';
 import { DatabaseFormDialog } from './database-form-dialog/database-form-dialog';
 import { DeleteDatabaseDialog } from './delete-database-dialog/delete-database-dialog';
@@ -23,6 +27,12 @@ export const DatabasesTab = ({ namespace, instanceName }: DatabasesTabProps) => 
   const createDatabase = useCreateDatabase(target);
   const updateDatabase = useUpdateDatabase(target);
   const deleteDatabase = useDeleteDatabase(target);
+  const createUser = useCreateUser(target);
+  const terms = useTerms();
+  // An owner created along with a database whose creation then failed: a retry
+  // reuses it, and its credentials are shown however the dialog closes.
+  const [createdOwner, setCreatedOwner] = useState<Credentials | null>(null);
+  const [shown, setShown] = useState<Credentials | null>(null);
 
   if (isLoading) {
     return (
@@ -48,9 +58,38 @@ export const DatabasesTab = ({ namespace, instanceName }: DatabasesTabProps) => 
 
   const { databases, canManage, connectChoice, databaseError, postgresql } = data;
   const owners = ownerOptions(users.data?.users ?? []);
+  const canCreateOwner = !!users.data?.canManage && users.data.rolesRequired === false;
   const close = () => {
-    [createDatabase, updateDatabase, deleteDatabase].forEach((m) => m.reset());
+    [createDatabase, updateDatabase, deleteDatabase, createUser].forEach((m) => m.reset());
     setDialog(null);
+    if (createdOwner) {
+      setShown(createdOwner);
+      setCreatedOwner(null);
+    }
+  };
+
+  const create = async (db: NewDatabase, newOwner?: string) => {
+    let owner: Credentials | null = null;
+    try {
+      if (newOwner !== undefined) {
+        owner =
+          createdOwner?.username === newOwner
+            ? createdOwner
+            : await createUser.mutateAsync({ username: newOwner, roles: [] });
+        setCreatedOwner(owner);
+        createUser.reset();
+      }
+      await createDatabase.mutateAsync(owner ? { ...db, ownerId: owner.id } : db);
+    } catch {
+      // Shown in the dialog from the mutations' state.
+      return;
+    }
+    [createDatabase, createUser].forEach((m) => m.reset());
+    setDialog(null);
+    setCreatedOwner(null);
+    if (owner) {
+      setShown(owner);
+    }
   };
 
   return (
@@ -91,10 +130,11 @@ export const DatabasesTab = ({ namespace, instanceName }: DatabasesTabProps) => 
           connectChoice={connectChoice}
           extensions={postgresql?.extensions}
           extensionsError={postgresql?.extensionsError}
-          isSubmitting={createDatabase.isPending}
-          error={createDatabase.error?.message}
+          canCreateOwner={canCreateOwner}
+          isSubmitting={createDatabase.isPending || createUser.isPending}
+          error={(createUser.error ?? createDatabase.error)?.message}
           onClose={close}
-          onSubmit={(db) => createDatabase.mutate(db, { onSuccess: close })}
+          onSubmit={create}
         />
       )}
       {dialog?.kind === 'edit' && (
@@ -118,6 +158,13 @@ export const DatabasesTab = ({ namespace, instanceName }: DatabasesTabProps) => 
               { onSuccess: close }
             )
           }
+        />
+      )}
+      {shown && (
+        <CredentialsDialog
+          title={terms.createdTitle(shown.username)}
+          credentials={shown}
+          onClose={() => setShown(null)}
         />
       )}
       {dialog?.kind === 'delete' && (

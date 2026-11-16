@@ -17,6 +17,7 @@ export const Messages = {
   roleRequired: 'Select a role.',
   databaseRequired: 'Enter a database.',
   databaseChoose: 'Choose a database.',
-  noDatabases: 'No databases yet: create one in Databases.',
-  noRoles: 'No roles: the user can log in but not use any data, e.g. the owner of a database.',
+  noDatabases: 'No databases yet. To own one, a user needs no role.',
+  noRoles:
+    'No roles: the user can log in but not use any data. That is all the owner of a database needs: create the user, then its database in Databases.',
 };

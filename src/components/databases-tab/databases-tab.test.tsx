@@ -61,6 +61,36 @@ describe('DatabaseFormDialog', () => {
     expect(onSubmit).toHaveBeenCalledWith({ name: 'orders', ownerId: 'pg-other', connect: 'Public' });
   });
 
+  it('creates the owner along with the database', () => {
+    const onSubmit = vi.fn();
+    render(
+      <DatabaseFormDialog owners={[]} canCreateOwner connectChoice={false} isSubmitting={false} onSubmit={onSubmit} onClose={vi.fn()} />
+    );
+    expect(screen.queryByText(Messages.noOwners)).toBeNull();
+    fireEvent.change(screen.getByLabelText(Messages.name), { target: { value: 'orders' } });
+    fireEvent.click(screen.getByRole('button', { name: Messages.create }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(Messages.newOwnerRequired)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(Messages.newOwnerName), { target: { value: ' orders_owner ' } });
+    fireEvent.click(screen.getByRole('button', { name: Messages.create }));
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'orders', ownerId: '', connect: 'Granted' }, 'orders_owner');
+  });
+
+  it('offers a new owner next to the existing users', () => {
+    const onSubmit = vi.fn();
+    render(
+      <DatabaseFormDialog owners={owners} canCreateOwner connectChoice={false} isSubmitting={false} onSubmit={onSubmit} onClose={vi.fn()} />
+    );
+    expect(screen.queryByLabelText(Messages.newOwnerName)).toBeNull();
+    fireEvent.change(screen.getByLabelText(Messages.name), { target: { value: 'orders' } });
+    fireEvent.mouseDown(screen.getByRole('combobox'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText(Messages.newOwner));
+    fireEvent.change(screen.getByLabelText(Messages.newOwnerName), { target: { value: 'app' } });
+    fireEvent.click(screen.getByRole('button', { name: Messages.create }));
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'orders', ownerId: '', connect: 'Granted' }, 'app');
+  });
+
   it('points to the Users tab when there is no owner to choose', () => {
     render(<DatabaseFormDialog owners={[]} isSubmitting={false} onSubmit={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByText(Messages.noOwners)).toBeTruthy();

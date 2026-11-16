@@ -12,11 +12,17 @@ import {
 import { Messages } from './user-form-dialog.messages';
 
 // A new user starts with one empty role row, or with the only role there is.
-export const initialFormValues = (grants: RoleGrant[] = [], roles: Role[] = []): UserFormValues => {
-  let rows: RoleGrantDraft[] = [EMPTY_ROLE_GRANT];
+// Where users may have no roles, e.g. the owner of a database, it starts with
+// none.
+export const initialFormValues = (
+  grants: RoleGrant[] = [],
+  roles: Role[] = [],
+  rolesRequired = true
+): UserFormValues => {
+  let rows: RoleGrantDraft[] = rolesRequired ? [EMPTY_ROLE_GRANT] : [];
   if (grants.length) {
     rows = grants.map(({ role, database }) => ({ role, database: database ?? '' }));
-  } else if (roles.length === 1) {
+  } else if (rolesRequired && roles.length === 1) {
     rows = [{ ...EMPTY_ROLE_GRANT, role: roles[0].name }];
   }
   return { username: '', password: '', roles: rows };

@@ -101,6 +101,12 @@ describe('initialFormValues', () => {
     ]);
   });
 
+  it('starts with no role row when roles are optional', () => {
+    const invoke: Role[] = [{ name: 'invoke', scope: 'cluster', description: '' }];
+    expect(initialFormValues([], roles, false).roles).toEqual([]);
+    expect(initialFormValues([], invoke, false).roles).toEqual([]);
+  });
+
   it('pre-selects the only role there is', () => {
     const invoke: Role[] = [{ name: 'invoke', scope: 'cluster', description: '' }];
     expect(initialFormValues([], invoke).roles).toEqual([{ role: 'invoke', database: '' }]);

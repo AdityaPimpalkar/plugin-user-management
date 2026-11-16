@@ -26,11 +26,14 @@ export interface DatabaseFormValues {
 export interface DatabaseFormErrors {
   name?: string;
   ownerId?: string;
+  newOwner?: string;
 }
 
 export const validateDatabaseForm = (
   values: DatabaseFormValues,
-  isCreate: boolean
+  isCreate: boolean,
+  // The username of the owner to create, when one is.
+  newOwner?: string
 ): DatabaseFormErrors => {
   const errors: DatabaseFormErrors = {};
   if (isCreate) {
@@ -40,7 +43,11 @@ export const validateDatabaseForm = (
       errors.name = Messages.nameInvalid;
     }
   }
-  if (!values.ownerId) {
+  if (newOwner !== undefined) {
+    if (!newOwner.trim()) {
+      errors.newOwner = Messages.newOwnerRequired;
+    }
+  } else if (!values.ownerId) {
     errors.ownerId = Messages.ownerRequired;
   }
   return errors;

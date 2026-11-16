@@ -53,7 +53,9 @@ export const UserFormDialog = ({
   onSubmit,
   onClose,
 }: UserFormDialogProps) => {
-  const [values, setValues] = useState(() => initialFormValues(initialRoles, roles));
+  const [values, setValues] = useState(() =>
+    initialFormValues(initialRoles, roles, rolesRequired)
+  );
   const [submitted, setSubmitted] = useState(false);
   const terms = useTerms();
   const errors = validateUserForm(values, roles, mode, rolesRequired);

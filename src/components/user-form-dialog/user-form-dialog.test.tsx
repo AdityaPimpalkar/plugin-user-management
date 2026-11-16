@@ -139,6 +139,7 @@ describe('UserFormDialog with managed databases', () => {
       />
     );
     fireEvent.change(screen.getByLabelText(PASSWORD_TERMS.username), { target: { value: 'app' } });
+    fireEvent.click(screen.getByRole('button', { name: Messages.addRole }));
     selectRole(0, 'readWrite');
     fireEvent.mouseDown(screen.getAllByRole('combobox')[1]);
     const options = within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
@@ -160,7 +161,7 @@ describe('UserFormDialog with managed databases', () => {
     expect(screen.getByText(Messages.noDatabases)).toBeTruthy();
   });
 
-  it('creates a user without roles when the engine allows it', () => {
+  it('starts a new user without roles when the engine allows it', () => {
     const onSubmit = vi.fn();
     render(
       <UserFormDialog
@@ -174,7 +175,7 @@ describe('UserFormDialog with managed databases', () => {
       />
     );
     fireEvent.change(screen.getByLabelText(PASSWORD_TERMS.username), { target: { value: 'orders_owner' } });
-    fireEvent.click(screen.getByRole('button', { name: Messages.removeRole }));
+    expect(screen.queryByRole('button', { name: Messages.removeRole })).toBeNull();
     expect(screen.getByText(Messages.noRoles)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: Messages.create }));
     expect(onSubmit).toHaveBeenCalledWith({ username: 'orders_owner', password: undefined, roles: [] });

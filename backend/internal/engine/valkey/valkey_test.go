@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -148,6 +149,34 @@ func TestNormalizeRoles(t *testing.T) {
 	} {
 		if _, err := e.NormalizeRoles(grants); !errors.Is(err, engine.ErrInvalid) {
 			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+}
+
+// The UI rejects a role next to one that includes it: those are exactly the
+// roles NormalizeRoles drops.
+func TestRoleIncludesMatchNormalize(t *testing.T) {
+	for _, r := range roleCatalog {
+		for _, included := range r.Includes {
+			got, err := normalizeRoles([]engine.RoleGrant{{Role: r.Name}, {Role: included}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := []engine.RoleGrant{{Role: r.Name}}; !reflect.DeepEqual(got, want) {
+				t.Errorf("%s with %s = %+v, want %+v", r.Name, included, got, want)
+			}
+		}
+		for _, other := range roleCatalog {
+			if other.Name == r.Name || slices.Contains(r.Includes, other.Name) {
+				continue
+			}
+			got, err := normalizeRoles([]engine.RoleGrant{{Role: r.Name}, {Role: other.Name}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 2 && !slices.Contains(other.Includes, r.Name) {
+				t.Errorf("%s drops %s, but doesn't list it in Includes", r.Name, other.Name)
+			}
 		}
 	}
 }

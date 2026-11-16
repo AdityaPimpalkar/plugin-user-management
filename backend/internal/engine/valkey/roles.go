@@ -18,7 +18,7 @@ const (
 // (ACL, CONFIG, FLUSHALL, KEYS, ...), whatever the user is also granted.
 var roleCatalog = []engine.Role{
 	{Name: roleRead, Scope: engine.ScopeCluster, Description: "Read all keys (@read)."},
-	{Name: roleReadWrite, Scope: engine.ScopeCluster, Description: "Read and write all keys, with transactions and scripts (@read, @write, @transaction and @scripting)."},
+	{Name: roleReadWrite, Scope: engine.ScopeCluster, Description: "Read and write all keys, with transactions and scripts (@read, @write, @transaction and @scripting).", Includes: []string{roleRead}},
 	{Name: rolePubSub, Scope: engine.ScopeCluster, Description: "Publish and subscribe to all channels (@pubsub)."},
 }
 

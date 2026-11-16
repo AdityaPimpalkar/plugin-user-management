@@ -7,6 +7,7 @@ import {
   toRoleGrants,
   validateUserForm,
 } from './user-form-dialog.utils';
+import { Messages } from './user-form-dialog.messages';
 
 const roles: Role[] = [
   { name: 'readWrite', scope: 'database', description: '' },
@@ -72,6 +73,48 @@ describe('validateUserForm', () => {
   it('requires at least one role', () => {
     const errors = validateUserForm({ username: 'a', password: '', roles: [] }, roles, 'create');
     expect(errors.roles).toBeDefined();
+  });
+
+  it('rejects a role granted twice on the same database', () => {
+    const errors = validateUserForm(
+      {
+        username: 'a',
+        password: '',
+        roles: [
+          { role: 'readWrite', database: 'shop' },
+          { role: 'readWrite', database: 'blog' },
+          { role: 'readWrite', database: ' shop ' },
+        ],
+      },
+      roles,
+      'create'
+    );
+    expect(errors.roleRows.map((r) => r.role)).toEqual([undefined, undefined, Messages.roleDuplicate]);
+  });
+
+  it('rejects a role another one already includes, on the same database only', () => {
+    const withIncludes: Role[] = [
+      { name: 'read', scope: 'database', description: '' },
+      { name: 'readWrite', scope: 'database', description: '', includes: ['read'] },
+    ];
+    const errors = validateUserForm(
+      {
+        username: 'a',
+        password: '',
+        roles: [
+          { role: 'read', database: 'shop' },
+          { role: 'read', database: 'blog' },
+          { role: 'readWrite', database: 'shop' },
+        ],
+      },
+      withIncludes,
+      'create'
+    );
+    expect(errors.roleRows.map((r) => r.role)).toEqual([
+      Messages.roleIncluded('readWrite'),
+      undefined,
+      undefined,
+    ]);
   });
 });
 

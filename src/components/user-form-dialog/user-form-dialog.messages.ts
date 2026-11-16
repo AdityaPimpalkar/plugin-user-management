@@ -15,6 +15,8 @@ export const Messages = {
     `Use ${min} to ${max} characters, or leave empty to generate one.`,
   rolesRequired: 'Grant at least one role.',
   roleRequired: 'Select a role.',
+  roleDuplicate: 'Already granted above.',
+  roleIncluded: (role: string) => `Already included in ${role}.`,
   databaseRequired: 'Enter a database.',
   databaseChoose: 'Choose a database.',
   noDatabases: 'No databases yet. To own one, a user needs no role.',

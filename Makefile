@@ -38,6 +38,30 @@ lint: ## Vet the backend and lint the Helm chart.
 	cd backend && go vet ./...
 	helm lint charts/plugin-user-management
 
+##@ Tilt development (local k3d cluster)
+
+.PHONY: k3d-cluster-up
+k3d-cluster-up: ## Create the local k3d cluster.
+	k3d cluster create --config ./dev/k3d_config.yaml
+
+.PHONY: k3d-cluster-down
+k3d-cluster-down: ## Delete the local k3d cluster.
+	k3d cluster delete --config ./dev/k3d_config.yaml
+
+.PHONY: k3d-cluster-reset
+k3d-cluster-reset: k3d-cluster-down k3d-cluster-up ## Recreate the local k3d cluster.
+
+.PHONY: dev-up
+dev-up: k3d-cluster-up ## Create the k3d cluster and start Tilt (dev/Tiltfile).
+	tilt up -f dev/Tiltfile
+
+.PHONY: dev-down
+dev-down: ## Remove what Tilt deployed (keeps the cluster).
+	tilt down -f dev/Tiltfile
+
+.PHONY: dev-destroy
+dev-destroy: k3d-cluster-down ## Delete the k3d cluster and everything in it.
+
 ##@ Development on a remote cluster (current kubeconfig context)
 
 DEV_TAG := dev-$(shell date +%s)

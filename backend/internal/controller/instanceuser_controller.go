@@ -239,7 +239,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			result.RequeueAfter = pendingRequeue
 		}
 	}
-	return result, nil
+	return withResync(result, eng, len(states) > 0), nil
 }
 
 // declarableRoles leaves out the roles granted on databases whose
@@ -293,7 +293,15 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 				s.pending(err.Error())
 			}
 		}
-		// Deleted users stay until the database can be reached to drop them.
+		// Deleted users stay until the database can be reached to drop them,
+		// unless they were never declared and there's nothing to drop.
+		for _, u := range deleting {
+			if !u.Status.Declared {
+				if err := removeFinalizer(ctx, r.Client, u, Finalizer); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+		}
 		return ctrl.Result{RequeueAfter: pendingRequeue}, nil
 	}
 	existing := map[string]engine.User{}
@@ -334,6 +342,8 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 		switch dbUser, found := existing[s.user.Spec.Username]; {
 		case s.waiting != "":
 			s.pending(s.waiting)
+		case userProblem(eng, target, s.user.Spec.Username) != "":
+			s.pending(userProblem(eng, target, s.user.Spec.Username))
 		case found && engine.SameRoles(dbUser.Roles, s.roles):
 			s.phase = v1alpha1.PhaseReady
 		default:
@@ -373,6 +383,13 @@ func pendingMessage(ctx context.Context, eng engine.Engine, target engine.Target
 		}
 	}
 	return "waiting for the operator to apply the user"
+}
+
+func userProblem(eng engine.Engine, target engine.Target, username string) string {
+	if reporter, ok := eng.(engine.UserProblemReporter); ok {
+		return reporter.UserProblem(target, username)
+	}
+	return ""
 }
 
 func usernameDeclared(users []engine.DesiredUser, username string) bool {

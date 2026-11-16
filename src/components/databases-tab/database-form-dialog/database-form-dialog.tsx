@@ -29,6 +29,9 @@ interface DatabaseFormDialogProps {
   // The database being edited; creates one when absent.
   initial?: NewDatabase;
   owners: OwnerOption[];
+  // Offers the choice of who can connect; when false, only the owner and the
+  // users granted a role can.
+  connectChoice?: boolean;
   // Extensions users may create, on PostgreSQL instances; no picker otherwise.
   extensions?: PostgreSQLExtension[];
   // Why the extensions can't be listed.
@@ -42,6 +45,7 @@ interface DatabaseFormDialogProps {
 export const DatabaseFormDialog = ({
   initial,
   owners,
+  connectChoice = true,
   extensions,
   extensionsError,
   isSubmitting,
@@ -51,7 +55,12 @@ export const DatabaseFormDialog = ({
 }: DatabaseFormDialogProps) => {
   const isCreate = !initial;
   const [values, setValues] = useState<NewDatabase>(
-    () => initial ?? { name: '', ownerId: owners.length === 1 ? owners[0].id : '', connect: 'Public' }
+    () =>
+      initial ?? {
+        name: '',
+        ownerId: owners.length === 1 ? owners[0].id : '',
+        connect: connectChoice ? 'Public' : 'Granted',
+      }
   );
   const [submitted, setSubmitted] = useState(false);
   const errors = validateDatabaseForm(values, isCreate);
@@ -104,31 +113,33 @@ export const DatabaseFormDialog = ({
               ))}
             </TextField>
             {owners.length === 0 && <Alert severity="info">{Messages.noOwners}</Alert>}
-            <FormControl>
-              <FormLabel id="database-connect">{Messages.whoCanConnect}</FormLabel>
-              <RadioGroup
-                aria-labelledby="database-connect"
-                value={values.connect}
-                onChange={(e) => setValues((v) => ({ ...v, connect: e.target.value as DatabaseConnect }))}
-              >
-                {CONNECT_OPTIONS.map((option) => (
-                  <FormControlLabel
-                    key={option}
-                    value={option}
-                    control={<Radio size="small" />}
-                    label={
-                      <Stack>
-                        <Typography variant="body2">{Messages.connect[option]}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {Messages.connectHelp[option]}
-                        </Typography>
-                      </Stack>
-                    }
-                    sx={{ alignItems: 'flex-start', mt: 1, '& .MuiRadio-root': { pt: 0.25 } }}
-                  />
-                ))}
-              </RadioGroup>
-            </FormControl>
+            {connectChoice && (
+              <FormControl>
+                <FormLabel id="database-connect">{Messages.whoCanConnect}</FormLabel>
+                <RadioGroup
+                  aria-labelledby="database-connect"
+                  value={values.connect}
+                  onChange={(e) => setValues((v) => ({ ...v, connect: e.target.value as DatabaseConnect }))}
+                >
+                  {CONNECT_OPTIONS.map((option) => (
+                    <FormControlLabel
+                      key={option}
+                      value={option}
+                      control={<Radio size="small" />}
+                      label={
+                        <Stack>
+                          <Typography variant="body2">{Messages.connect[option]}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {Messages.connectHelp[option]}
+                          </Typography>
+                        </Stack>
+                      }
+                      sx={{ alignItems: 'flex-start', mt: 1, '& .MuiRadio-root': { pt: 0.25 } }}
+                    />
+                  ))}
+                </RadioGroup>
+              </FormControl>
+            )}
             {extensions && (
               <ExtensionsPicker
                 available={extensions}

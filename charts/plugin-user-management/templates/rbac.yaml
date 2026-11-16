@@ -56,6 +56,12 @@ rules:
   - apiGroups: ["pgv2.percona.com"]
     resources: ["perconapgclusters"]
     verbs: ["get"]
+  # MSSQL: logins and databases are managed in T-SQL as sa (Secret
+  # everest-secrets-<instance>). The MSSQLAvailabilityGroup or MSSQLInstance
+  # gives the endpoint, TLS Secret and readiness.
+  - apiGroups: ["mssql.solanica.io"]
+    resources: ["mssqlavailabilitygroups", "mssqlinstances"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

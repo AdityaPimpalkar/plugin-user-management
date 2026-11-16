@@ -241,6 +241,32 @@ func TestRolesChangeUntilApplied(t *testing.T) {
 	}
 }
 
+type problemEngine struct {
+	*fakeEngine
+	problem string
+}
+
+func (p *problemEngine) UserProblem(engine.Target, string) string { return p.problem }
+
+func TestUserProblemKeepsMatchingUserPending(t *testing.T) {
+	u := dbUser("app", "app", readShop)
+	u.Status.Declared = true
+	h := newHarness(t, instance("percona-server-mongodb"), u)
+	eng := &problemEngine{fakeEngine: h.engine, problem: "password rejected"}
+	h.r.Engines["percona-server-mongodb"] = eng
+	h.engine.dbUsers = []engine.User{{Username: "app", Database: "admin", Roles: []engine.RoleGrant{{Role: "read", Database: "shop"}}}}
+	h.reconcile()
+	if s := h.get("app").Status; s.Phase != v1alpha1.PhasePending || s.Message != "password rejected" {
+		t.Errorf("status = %+v, want Pending with the engine's problem", s)
+	}
+
+	eng.problem = ""
+	h.reconcile()
+	if s := h.get("app").Status; s.Phase != v1alpha1.PhaseReady {
+		t.Errorf("status = %+v, want Ready once applied", s)
+	}
+}
+
 func TestKeepsDeletingUserUntilDropped(t *testing.T) {
 	deleted := dbUser("old", "old", readShop)
 	deleted.Status.Declared = true
@@ -367,6 +393,25 @@ func TestDatabaseNotReady(t *testing.T) {
 	}
 	if len(h.engine.dropped) != 0 || len(h.get("old").Finalizers) != 1 {
 		t.Error("deleted user released before it could be dropped")
+	}
+}
+
+func TestDatabaseNotReadyReleasesUndeclaredUser(t *testing.T) {
+	never := dbUser("never", "never", readShop)
+	never.Finalizers = []string{Finalizer}
+	h := newHarness(t, instance("percona-server-mongodb"), never)
+	if err := h.client.Delete(context.Background(), h.get("never")); err != nil {
+		t.Fatal(err)
+	}
+	h.engine.listErr = engine.ErrNotReady
+
+	h.reconcile()
+	err := h.client.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: "never"}, &v1alpha1.InstanceUser{})
+	if !apierrors.IsNotFound(err) {
+		t.Errorf("undeclared user not released: %v", err)
+	}
+	if len(h.engine.dropped) != 0 {
+		t.Errorf("dropped = %v", h.engine.dropped)
 	}
 }
 

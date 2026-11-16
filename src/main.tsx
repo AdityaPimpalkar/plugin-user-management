@@ -12,6 +12,7 @@ const SUPPORTED_PROVIDERS = [
   'provider-cloudnative-pg',
   'provider-percona-postgresql',
   'provider-kserve',
+  'mssql',
 ];
 
 const register: PluginRegisterFn = (api) => {

@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/openeverest/plugin-user-management/backend/internal/password"
 )
@@ -122,6 +123,14 @@ type PendingReasoner interface {
 	PendingReason(ctx context.Context, target Target, username string) string
 }
 
+// UserProblemReporter is implemented by engines that can fail to apply part
+// of a user whose roles already match, e.g. a password the database rejects.
+type UserProblemReporter interface {
+	// UserProblem returns why the user couldn't be applied in the last
+	// SyncUsers, or "" when it was applied.
+	UserProblem(target Target, username string) string
+}
+
 // CredentialKind tells how users of an engine authenticate.
 type CredentialKind string
 
@@ -217,6 +226,21 @@ type DatabaseEngine interface {
 	// ErrInProgress means the release was started and ReleaseDatabase must be
 	// called again until it returns nil.
 	ReleaseDatabase(ctx context.Context, target Target, name string, drop bool) error
+}
+
+// GrantedConnectEngine is implemented by DatabaseEngines whose databases
+// only ever let their owner and the users granted a role connect: they
+// ignore DesiredDatabase.RestrictConnect.
+type GrantedConnectEngine interface {
+	DatabaseEngine
+	OnlyGrantedConnect()
+}
+
+// Resyncer is implemented by engines whose applied users and databases can
+// be lost without the plugin noticing, e.g. on a failover, so the plugin
+// checks them again every ResyncInterval once they're Ready.
+type Resyncer interface {
+	ResyncInterval() time.Duration
 }
 
 // CredentialKindOf returns how users of the engine authenticate.

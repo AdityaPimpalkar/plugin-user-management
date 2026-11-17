@@ -46,13 +46,17 @@ postgresql:
     # citext, ...), which a database's owner could create anyway.
     allowTrusted: true
     # Further extensions. Those that must be preloaded (timescaledb, ...) also
-    # need the provider's setting for the instance.
+    # need the provider's setting for the instance. amcheck and pg_buffercache
+    # are diagnostic contrib modules that grant nothing to PUBLIC: their
+    # functions stay with superusers (and pg_monitor for pg_buffercache).
     allowed:
       - vector
       - postgis
       - timescaledb
       - age
       - pg_stat_statements
+      - amcheck
+      - pg_buffercache
 
 # Optional override for the Everest API URL. When empty the backend discovers
 # the everest Service via Kubernetes-injected env vars (same namespace), then

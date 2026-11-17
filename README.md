@@ -168,10 +168,12 @@ status:
   the plugin's policy allows. That's PostgreSQL's trusted extensions (`pg_trgm`,
   `pgcrypto`, `uuid-ossp`, `hstore`, `citext`, ...), which a database's owner
   could create anyway, plus the chart's `postgresql.extensions.allowed`
-  (default `vector`, `postgis`, `timescaledb`, `age`, `pg_stat_statements`).
-  Extensions that read server files, connect to other servers or add
-  untrusted languages are as powerful as superuser access, so they stay off
-  unless the admin lists them. `plpgsql` is never managed.
+  (default `vector`, `postgis`, `timescaledb`, `age`, `pg_stat_statements`,
+  `amcheck`, `pg_buffercache`). `amcheck` and `pg_buffercache` grant nothing to
+  `PUBLIC`: amcheck's checks stay with superusers, and `pg_buffercache` is
+  readable by `pg_monitor`. Extensions that read server files, connect to
+  other servers or add untrusted languages are as powerful as superuser
+  access, so they stay off unless the admin lists them. `plpgsql` is never managed.
 - **Creating:** `CREATE EXTENSION` runs as a superuser, in the database. On
   CloudNativePG it goes through the `Database` resource's `extensions`; on
   Percona PostgreSQL it's SQL.
@@ -621,7 +623,7 @@ done
 | Value | Default | Description |
 |---|---|---|
 | `postgresql.extensions.allowTrusted` | `true` | Let users create PostgreSQL's trusted extensions in databases |
-| `postgresql.extensions.allowed` | `[vector, postgis, timescaledb, age, pg_stat_statements]` | Further extensions users may create |
+| `postgresql.extensions.allowed` | `[vector, postgis, timescaledb, age, pg_stat_statements, amcheck, pg_buffercache]` | Further extensions users may create |
 | `plugin.extensionPoints[0].providers` | `[percona-server-mongodb, provider-cloudnative-pg, provider-percona-postgresql, provider-kserve, mssql]` | Providers that get the Access tab; it has a Databases section where the engine manages databases |
 | `everestAPIURL` | discovered | Everest API the backend authorizes against |
 

@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -34,6 +35,12 @@ type DatabaseReconciler struct {
 	// Engines by provider name (Instance spec.providerRef.name). Only those
 	// implementing engine.DatabaseEngine manage databases.
 	Engines map[string]engine.Engine
+	// Reader reads from the API server instead of the cache, to confirm that
+	// a database really isn't claimed before acting on it. Defaults to Client.
+	Reader client.Reader
+	// MaxConcurrentReconciles is how many instances are reconciled at once;
+	// an instance is never reconciled by two workers. Defaults to 1.
+	MaxConcurrentReconciles int
 }
 
 // IndexDatabaseInstance registers the InstanceIndex field index for InstanceDatabases.
@@ -54,6 +61,7 @@ func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("instancedatabase").
+		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
 		Watches(&v1alpha1.InstanceDatabase{}, handler.EnqueueRequestsFromMapFunc(
 			func(_ context.Context, obj client.Object) []reconcile.Request {
 				db, ok := obj.(*v1alpha1.InstanceDatabase)
@@ -250,7 +258,11 @@ func (r *DatabaseReconciler) syncDatabases(ctx context.Context, eng engine.Datab
 		// Deleted databases stay until the instance can be reached to release
 		// them, unless they were never declared and there's nothing to release.
 		for _, db := range deleting {
-			if !db.Status.Declared {
+			declared, err := r.declared(ctx, db)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if !declared {
 				if err := removeFinalizer(ctx, r.Client, db, DatabaseFinalizer); err != nil {
 					return ctrl.Result{}, err
 				}
@@ -273,12 +285,20 @@ func (r *DatabaseReconciler) syncDatabases(ctx context.Context, eng engine.Datab
 		}
 		name := s.db.Spec.Name
 		if found, ok := existing[name]; ok && !s.declared {
-			if found.System {
-				s.fail(fmt.Sprintf("database %q is reserved for the operator", name))
-			} else {
-				s.fail(fmt.Sprintf("database %q already exists and isn't managed by this InstanceDatabase", name))
+			// The cache may not have this InstanceDatabase's claim yet.
+			claimed, err := r.declared(ctx, s.db)
+			if err != nil {
+				return ctrl.Result{}, err
 			}
-			continue
+			if !claimed {
+				if found.System {
+					s.fail(fmt.Sprintf("database %q is reserved for the operator", name))
+				} else {
+					s.fail(fmt.Sprintf("database %q already exists and isn't managed by this InstanceDatabase", name))
+				}
+				continue
+			}
+			s.declared = true
 		}
 		if s.ownerProblem != "" {
 			if s.ownerInvalid {
@@ -332,7 +352,11 @@ func (r *DatabaseReconciler) syncDatabases(ctx context.Context, eng engine.Datab
 
 	var result ctrl.Result
 	for _, db := range deleting {
-		if db.Status.Declared && !claimed[db.Spec.Name] {
+		declared, err := r.declared(ctx, db)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if declared && !claimed[db.Spec.Name] {
 			drop := db.Spec.DeletionPolicy == v1alpha1.DeletionPolicyDelete
 			err := eng.ReleaseDatabase(ctx, target, db.Spec.Name, drop)
 			if errors.Is(err, engine.ErrInProgress) {
@@ -353,6 +377,29 @@ func (r *DatabaseReconciler) syncDatabases(ctx context.Context, eng engine.Datab
 		}
 	}
 	return result, nil
+}
+
+// declared reports whether the InstanceDatabase claimed its name. The cache
+// can lag behind a claim this controller just wrote, so "not claimed" is
+// confirmed with the API server before the database is failed as a takeover
+// or let go without being released.
+func (r *DatabaseReconciler) declared(ctx context.Context, db *v1alpha1.InstanceDatabase) (bool, error) {
+	if db.Status.Declared {
+		return true, nil
+	}
+	reader := r.Reader
+	if reader == nil {
+		reader = r.Client
+	}
+	live := &v1alpha1.InstanceDatabase{}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(db), live); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	if live.UID != db.UID {
+		return false, nil
+	}
+	db.Status.Declared = live.Status.Declared
+	return live.Status.Declared, nil
 }
 
 // abandon fails live databases and releases deleted ones when the instance's

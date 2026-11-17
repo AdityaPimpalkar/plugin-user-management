@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -72,8 +73,14 @@ func ToEngineGrants(grants []v1alpha1.RoleGrant) []engine.RoleGrant {
 // spec.users), so requests are keyed by instance, not by InstanceUser.
 type Reconciler struct {
 	Client client.Client
+	// Reader reads from the API server instead of the cache, to confirm that
+	// a user really isn't claimed before acting on it. Defaults to Client.
+	Reader client.Reader
 	// Engines by provider name (Instance spec.providerRef.name).
 	Engines map[string]engine.Engine
+	// MaxConcurrentReconciles is how many instances are reconciled at once;
+	// an instance is never reconciled by two workers. Defaults to 1.
+	MaxConcurrentReconciles int
 }
 
 // IndexInstance registers the InstanceIndex field index.
@@ -91,6 +98,7 @@ func IndexInstance(ctx context.Context, mgr ctrl.Manager) error {
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("instanceuser").
+		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
 		Watches(&v1alpha1.InstanceUser{}, handler.EnqueueRequestsFromMapFunc(
 			func(_ context.Context, obj client.Object) []reconcile.Request {
 				u, ok := obj.(*v1alpha1.InstanceUser)
@@ -296,7 +304,11 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 		// Deleted users stay until the database can be reached to drop them,
 		// unless they were never declared and there's nothing to drop.
 		for _, u := range deleting {
-			if !u.Status.Declared {
+			declared, err := r.declared(ctx, u)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if !declared {
 				if err := removeFinalizer(ctx, r.Client, u, Finalizer); err != nil {
 					return ctrl.Result{}, err
 				}
@@ -317,12 +329,29 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 			continue
 		}
 		if dbUser, found := existing[s.user.Spec.Username]; found && !s.declared {
-			if dbUser.System {
-				s.fail(fmt.Sprintf("user %q is reserved for the operator", s.user.Spec.Username))
-			} else {
-				s.fail(fmt.Sprintf("user %q already exists in the database and isn't managed by this InstanceUser", s.user.Spec.Username))
+			// The cache may not have this InstanceUser's claim yet.
+			claimed, err := r.declared(ctx, s.user)
+			if err != nil {
+				return ctrl.Result{}, err
 			}
-			continue
+			if !claimed {
+				if dbUser.System {
+					s.fail(fmt.Sprintf("user %q is reserved for the operator", s.user.Spec.Username))
+				} else {
+					s.fail(fmt.Sprintf("user %q already exists in the database and isn't managed by this InstanceUser", s.user.Spec.Username))
+				}
+				continue
+			}
+			s.declared = true
+		}
+		if !s.declared {
+			// Claim the username before declaring the user: once it exists in
+			// the database, only the InstanceUser that claimed it may manage
+			// and drop it, even if the plugin stops before writing its status.
+			if err := r.claim(ctx, s.user); err != nil {
+				return ctrl.Result{}, err
+			}
+			s.declared = true
 		}
 		roles := s.roles
 		if s.waiting != "" {
@@ -338,7 +367,6 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 		if s.phase != "" {
 			continue
 		}
-		s.declared = true
 		switch dbUser, found := existing[s.user.Spec.Username]; {
 		case s.waiting != "":
 			s.pending(s.waiting)
@@ -353,7 +381,11 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 
 	var result ctrl.Result
 	for _, u := range deleting {
-		if u.Status.Declared && !usernameDeclared(desired, u.Spec.Username) {
+		declared, err := r.declared(ctx, u)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if declared && !usernameDeclared(desired, u.Spec.Username) {
 			err := eng.DropUser(ctx, target, u.Spec.Username)
 			if errors.Is(err, engine.ErrInProgress) {
 				if err := r.writeStatus(ctx, &userState{user: u, declared: true, phase: v1alpha1.PhaseDeleting, message: err.Error()}); err != nil {
@@ -372,6 +404,37 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 		}
 	}
 	return result, nil
+}
+
+// declared reports whether the InstanceUser claimed its username. The cache
+// can lag behind a claim this controller just wrote, so "not claimed" is
+// confirmed with the API server before the user is failed as a takeover or
+// released without being dropped.
+func (r *Reconciler) declared(ctx context.Context, u *v1alpha1.InstanceUser) (bool, error) {
+	if u.Status.Declared {
+		return true, nil
+	}
+	reader := r.Reader
+	if reader == nil {
+		reader = r.Client
+	}
+	live := &v1alpha1.InstanceUser{}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(u), live); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	// A new InstanceUser of the same name hasn't claimed anything for this one.
+	if live.UID != u.UID {
+		return false, nil
+	}
+	u.Status.Declared = live.Status.Declared
+	return live.Status.Declared, nil
+}
+
+// claim records that the InstanceUser declares its username.
+func (r *Reconciler) claim(ctx context.Context, u *v1alpha1.InstanceUser) error {
+	orig := u.DeepCopy()
+	u.Status.Declared = true
+	return r.Client.Status().Patch(ctx, u, client.MergeFrom(orig))
 }
 
 // pendingMessage tells why a declared user isn't applied, with the

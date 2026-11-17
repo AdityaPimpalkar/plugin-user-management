@@ -59,6 +59,16 @@ postgresql:
 # falls back to http://everest.everest-system.svc.cluster.local:8080.
 everestAPIURL: ""
 
+controller:
+  # Instances reconciled at the same time, so one instance with many users
+  # doesn't hold up the others. An instance is reconciled by one worker.
+  maxConcurrentReconciles: 4
+
+# Client-side rate limit of the plugin's requests to the Kubernetes API.
+kubeAPI:
+  qps: 50
+  burst: 100
+
 resources:
   limits:
     cpu: 200m

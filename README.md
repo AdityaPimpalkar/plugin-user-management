@@ -247,6 +247,12 @@ The backend is one binary with two parts:
   InstanceUsers per instance. It hands them to the instance's **engine**,
   which declares them in the database operator's own API, observes the
   database to report status, and drops users that are deleted.
+  An InstanceUser claims its username (`status.declared`) before the user
+  is declared, so a user is dropped when its InstanceUser is deleted even
+  if the plugin stopped in between. Instances are reconciled in parallel
+  (`controller.maxConcurrentReconciles`, 4 by default), each by one worker
+  at a time; `kubeAPI.qps` and `kubeAPI.burst` limit the plugin's requests
+  to the Kubernetes API.
 
 The plugin ships its own CRD and controller rather than relying on the host:
 it's the standard Kubernetes extension model and lets the controller watch

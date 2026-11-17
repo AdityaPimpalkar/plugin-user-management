@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -111,6 +112,14 @@ func newMux(s *server) *http.ServeMux {
 	return mux
 }
 
+// envInt reads a positive integer setting, or returns the fallback.
+func envInt(key string, fallback int) int {
+	if n, err := strconv.Atoi(os.Getenv(key)); err == nil && n > 0 {
+		return n
+	}
+	return fallback
+}
+
 func envOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -175,6 +184,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("kubernetes config: %v", err)
 	}
+	// client-go's default of 5 requests a second makes reconciling an
+	// instance with many users, and listing users in the API, take minutes.
+	cfg.QPS = float32(envInt("KUBE_API_QPS", 50))
+	cfg.Burst = envInt("KUBE_API_BURST", 100)
 	kube, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		log.Fatalf("kubernetes client: %v", err)
@@ -204,10 +217,15 @@ func main() {
 	if err := controller.IndexDatabaseInstance(ctx, mgr); err != nil {
 		log.Fatalf("index InstanceDatabases: %v", err)
 	}
-	if err := (&controller.Reconciler{Client: mgr.GetClient(), Engines: engines}).SetupWithManager(mgr); err != nil {
+	workers := envInt("MAX_CONCURRENT_RECONCILES", 4)
+	if err := (&controller.Reconciler{
+		Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Engines: engines, MaxConcurrentReconciles: workers,
+	}).SetupWithManager(mgr); err != nil {
 		log.Fatalf("set up controller: %v", err)
 	}
-	if err := (&controller.DatabaseReconciler{Client: mgr.GetClient(), Engines: engines}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.DatabaseReconciler{
+		Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Engines: engines, MaxConcurrentReconciles: workers,
+	}).SetupWithManager(mgr); err != nil {
 		log.Fatalf("set up database controller: %v", err)
 	}
 

@@ -29,6 +29,7 @@ type fakeEngine struct {
 	listErr       error
 	dropErr       error
 	pendingReason string
+	syncErr       error
 	synced        [][]engine.DesiredUser
 	dropped       []string
 	uriCalls      int
@@ -59,7 +60,7 @@ func (f *fakeEngine) PendingReason(context.Context, engine.Target, string) strin
 
 func (f *fakeEngine) SyncUsers(_ context.Context, _ engine.Target, users []engine.DesiredUser) error {
 	f.synced = append(f.synced, users)
-	return nil
+	return f.syncErr
 }
 
 func (f *fakeEngine) ListUsers(context.Context, engine.Target) ([]engine.User, error) {
@@ -439,5 +440,67 @@ func TestUnsupportedProvider(t *testing.T) {
 	h.reconcile()
 	if s := h.get("app").Status; s.Phase != v1alpha1.PhaseFailed || s.Message != `user management is not supported for provider "mssql"` {
 		t.Errorf("status = %+v", s)
+	}
+}
+
+// A user is claimed before it's declared, so one whose declaration was
+// interrupted before its status was written is still dropped when deleted.
+func TestClaimsUserBeforeDeclaring(t *testing.T) {
+	h := newHarness(t, instance("percona-server-mongodb"), dbUser("app", "app", readShop))
+	h.engine.syncErr = errors.New("plugin stopped")
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: ns, Name: "mongo"}}
+	if _, err := h.r.Reconcile(context.Background(), req); err == nil {
+		t.Fatal("expected the sync error")
+	}
+	if !h.get("app").Status.Declared {
+		t.Fatal("user declared in the database without being claimed")
+	}
+
+	h.engine.syncErr = nil
+	h.engine.dbUsers = []engine.User{{Username: "app", Database: "admin"}}
+	h.reconcile()
+	if s := h.get("app").Status; s.Phase == v1alpha1.PhaseFailed {
+		t.Errorf("claimed user failed as a takeover: %+v", s)
+	}
+	if err := h.client.Delete(context.Background(), h.get("app")); err != nil {
+		t.Fatal(err)
+	}
+	h.reconcile()
+	if !reflect.DeepEqual(h.engine.dropped, []string{"app"}) {
+		t.Errorf("dropped = %v", h.engine.dropped)
+	}
+}
+
+// The cache can lag behind the claim: a user that looks unclaimed there is
+// neither failed as a takeover nor released without being dropped.
+func TestClaimNotInCacheYet(t *testing.T) {
+	stale := func(name string, deleting bool) (*v1alpha1.InstanceUser, *v1alpha1.InstanceUser) {
+		cached := dbUser(name, name, readShop)
+		cached.UID = types.UID(name)
+		if deleting {
+			cached.Finalizers = []string{Finalizer}
+		}
+		live := cached.DeepCopy()
+		live.Status.Declared = true
+		return cached, live
+	}
+	app, liveApp := stale("app", false)
+	old, liveOld := stale("old", true)
+	h := newHarness(t, instance("percona-server-mongodb"), app, old)
+	h.r.Reader = fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(liveApp, liveOld).Build()
+	if err := h.client.Delete(context.Background(), h.get("old")); err != nil {
+		t.Fatal(err)
+	}
+	h.engine.dbUsers = []engine.User{
+		{Username: "app", Database: "admin", Roles: []engine.RoleGrant{{Role: "read", Database: "shop"}}},
+		{Username: "old", Database: "admin"},
+	}
+	h.reconcile()
+
+	if s := h.get("app").Status; s.Phase != v1alpha1.PhaseReady {
+		t.Errorf("app status = %+v", s)
+	}
+	if !reflect.DeepEqual(h.engine.dropped, []string{"old"}) {
+		t.Errorf("dropped = %v", h.engine.dropped)
 	}
 }

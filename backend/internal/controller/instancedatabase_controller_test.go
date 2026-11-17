@@ -556,3 +556,25 @@ func TestDatabasePostgreSQLOptionsOnOtherEngines(t *testing.T) {
 		}
 	}
 }
+
+// The cache can lag behind the claim: a database that looks unclaimed there
+// is neither failed as a takeover nor let go without being released.
+func TestDatabaseClaimNotInCacheYet(t *testing.T) {
+	shop := instanceDatabase("shop", "shop", "owner")
+	shop.UID = "shop"
+	liveShop := shop.DeepCopy()
+	liveShop.Status.Declared = true
+	old := deletingDatabase(instanceDatabase("old", "old", "owner"), v1alpha1.DeletionPolicyDelete)
+	old.UID = "old"
+	liveOld := old.DeepCopy()
+	old.Status.Declared = false
+	h := newDBHarness(t, instance("provider-cloudnative-pg"), owner("owner", "owner", "mongo", v1alpha1.PhaseReady), shop, old)
+	h.r.Reader = fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(liveShop, liveOld).Build()
+	h.engine.dbs = []engine.Database{{Name: "shop", Owner: "owner"}, {Name: "old", Owner: "owner"}}
+	h.reconcile()
+
+	h.expectPhase("shop", v1alpha1.PhaseReady, "")
+	if !reflect.DeepEqual(h.engine.released, []release{{"old", true}}) {
+		t.Errorf("released = %v", h.engine.released)
+	}
+}

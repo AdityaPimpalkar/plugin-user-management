@@ -37,6 +37,7 @@ import (
 	"github.com/openeverest/plugin-user-management/backend/internal/engine"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/cnpg"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/kserve"
+	"github.com/openeverest/plugin-user-management/backend/internal/engine/mariadb"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/mongodb"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/mssql"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/perconapg"
@@ -202,6 +203,7 @@ func main() {
 		perconapg.ProviderName: perconapg.New(kube, dyn, extensionPolicy()),
 		kserve.ProviderName:    kserve.New(kube, dyn),
 		mssql.ProviderName:     mssql.New(kube, dyn),
+		mariadb.ProviderName:   mariadb.New(kube, dyn),
 		valkey.ProviderName:    valkey.New(kube, dyn),
 	}
 

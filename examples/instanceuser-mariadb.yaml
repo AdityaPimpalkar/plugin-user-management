@@ -1,0 +1,12 @@
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceUser
+metadata:
+  name: orders-mariadb
+  namespace: default
+spec:
+  instanceRef:
+    name: orders
+  username: orders_svc
+  roles:
+    - role: readWrite
+      database: orders

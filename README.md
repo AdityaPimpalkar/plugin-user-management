@@ -23,6 +23,7 @@ Supported providers:
 | `provider-percona-postgresql` | Percona Operator for PostgreSQL, through SQL as the operator's `postgres` superuser |
 | `provider-kserve` | API keys for models on the Envoy AI Gateway, through the provider's key Secrets |
 | `mssql` | Microsoft SQL Server (Solanica MSSQL operator), through T-SQL as `sa` |
+| `mariadb` | MariaDB, through mariadb-operator `User`, `Grant` and `Database` resources |
 | `valkey` | Valkey (valkey-operator 0.9+), through the `ValkeyCluster`'s `spec.acl.users` |
 
 ## InstanceUser
@@ -70,14 +71,16 @@ See [examples/instanceuser.yaml](examples/instanceuser.yaml) (MongoDB),
 [examples/instanceuser-percona-postgresql.yaml](examples/instanceuser-percona-postgresql.yaml)
 (Percona PostgreSQL),
 [examples/instanceuser-valkey.yaml](examples/instanceuser-valkey.yaml)
-(Valkey) and
+(Valkey),
+[examples/instanceuser-mariadb.yaml](examples/instanceuser-mariadb.yaml)
+(MariaDB) and
 [examples/instanceuser-kserve.yaml](examples/instanceuser-kserve.yaml)
 (an API key for a model).
 
 ## InstanceDatabase
 
-Supported for `provider-cloudnative-pg`, `provider-percona-postgresql` and
-`mssql`.
+Supported for `provider-cloudnative-pg`, `provider-percona-postgresql`,
+`mssql` and `mariadb`.
 Manage them from the **Databases** section of the instance's **Access** tab,
 next to **Users**. It lists the managed databases with their owner, who can
 connect and status, next to the instance's other databases. There you create
@@ -131,6 +134,9 @@ status:
   with the reason until the database is dropped or given another owner.
 - Users get access to one database with the `read` and `readWrite` roles on
   it (see [Per-database roles](#per-database-roles)).
+- MariaDB database owners receive `ALL PRIVILEGES` with `GRANT OPTION`.
+  User and database management is delegated to mariadb-operator; the plugin
+  uses `root` only to read the accounts and schemas that actually exist.
 - `connect` tells who can connect to the database. With `Public`,
   PostgreSQL's default, every user can, but without a role on it they can't
   read or change its tables. With `Granted` (`REVOKE CONNECT ... FROM

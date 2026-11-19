@@ -224,6 +224,10 @@ func observedPhase(obj *unstructured.Unstructured) string {
 }
 
 func readyProblem(obj *unstructured.Unstructured) string {
+	observed, _, _ := unstructured.NestedInt64(obj.Object, "status", "observedGeneration")
+	if observed != obj.GetGeneration() {
+		return fmt.Sprintf("waiting for %s %q generation %d to be observed", obj.GetKind(), obj.GetName(), obj.GetGeneration())
+	}
 	switch observedPhase(obj) {
 	case "Ready":
 		return ""

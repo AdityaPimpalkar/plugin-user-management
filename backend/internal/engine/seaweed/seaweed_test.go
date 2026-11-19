@@ -298,6 +298,75 @@ func TestPendingReason(t *testing.T) {
 	}
 }
 
+func TestPendingReasonIncludesPolicyFailureAndGeneration(t *testing.T) {
+	e := newEngine([]runtime.Object{seaweed()}, credentialsSecret("AKIAALICE00000000001"))
+	user := desiredUser(engine.RoleGrant{Role: RoleRead, Bucket: "uploads"})
+	if err := e.SyncUsers(context.Background(), target, []engine.DesiredUser{user}); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		gvr  schema.GroupVersionResource
+		name string
+	}{
+		{identityResource, identityName(target, user.Username)},
+		{credentialResource, credentialsName(target, user.Username)},
+		{bindingResource, bindingName(target, user.Username, user.Roles[0])},
+	} {
+		obj, err := e.dyn.Resource(item.gvr).Namespace(target.Namespace).Get(
+			context.Background(), item.name, metav1.GetOptions{},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		obj.SetGeneration(1)
+		obj.Object["status"] = map[string]any{
+			"phase": "Ready", "observedGeneration": int64(1),
+		}
+		if _, err := e.dyn.Resource(item.gvr).Namespace(target.Namespace).Update(
+			context.Background(), obj, metav1.UpdateOptions{},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	policy, err := e.dyn.Resource(policyResource).Namespace(target.Namespace).Get(
+		context.Background(), policyName(target, user.Username, user.Roles[0]), metav1.GetOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.SetGeneration(2)
+	policy.Object["status"] = map[string]any{
+		"phase":              "Failed",
+		"observedGeneration": int64(2),
+		"conditions": []any{map[string]any{
+			"type": "Ready", "status": "False", "message": "IAM policy was rejected",
+		}},
+	}
+	if _, err := e.dyn.Resource(policyResource).Namespace(target.Namespace).Update(
+		context.Background(), policy, metav1.UpdateOptions{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if reason := e.userProblem(context.Background(), target, user.Username); reason != "IAM policy was rejected" {
+		t.Fatalf("policy failure = %q", reason)
+	}
+
+	condition := policy.Object["status"].(map[string]any)
+	condition["phase"] = "Ready"
+	condition["observedGeneration"] = int64(1)
+	condition["conditions"] = []any{map[string]any{
+		"type": "Ready", "status": "True", "message": "",
+	}}
+	if _, err := e.dyn.Resource(policyResource).Namespace(target.Namespace).Update(
+		context.Background(), policy, metav1.UpdateOptions{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if reason := e.userProblem(context.Background(), target, user.Username); !strings.Contains(reason, "generation 2 to be observed") {
+		t.Fatalf("stale policy generation = %q", reason)
+	}
+}
+
 func TestForeignIdentityIsListed(t *testing.T) {
 	foreign := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": identityResource.GroupVersion().String(),

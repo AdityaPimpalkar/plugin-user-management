@@ -393,13 +393,15 @@ func (e *Engine) userProblem(ctx context.Context, target engine.Target, username
 			return reason
 		}
 	}
-	list, err := e.dyn.Resource(bindingResource).Namespace(target.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: usernameLabel + "=" + identityLabel(identityName(target, username)),
-	})
-	if err == nil {
-		for i := range list.Items {
-			if reason := readyProblem(&list.Items[i]); reason != "" {
-				return reason
+	for _, gvr := range []schema.GroupVersionResource{policyResource, bindingResource} {
+		list, err := e.dyn.Resource(gvr).Namespace(target.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: usernameLabel + "=" + identityLabel(identityName(target, username)),
+		})
+		if err == nil {
+			for i := range list.Items {
+				if reason := readyProblem(&list.Items[i]); reason != "" {
+					return reason
+				}
 			}
 		}
 	}

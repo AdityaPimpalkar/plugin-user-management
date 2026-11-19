@@ -15,7 +15,7 @@ service:
 
 plugin:
   displayName: "User Management"
-  description: "Database users and their roles, databases and their owners, and API keys for models."
+  description: "Database and S3 users, their roles and scoped resources, and API keys for models."
   vendor: "OpenEverest"
   enabled: true
   bundlePath: "/main.js"
@@ -31,6 +31,7 @@ plugin:
         - provider-cloudnative-pg
         - provider-percona-postgresql
         - provider-kserve
+        - provider-seaweedfs
         - mssql
         - valkey
 

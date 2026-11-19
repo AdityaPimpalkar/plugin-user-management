@@ -4,7 +4,9 @@ export const Messages = {
   roles: 'Roles',
   role: 'Role',
   database: 'Database',
+  bucket: 'Bucket',
   allDatabases: 'All databases',
+  allBuckets: 'All buckets',
   addRole: 'Add role',
   removeRole: 'Remove role',
   cancel: 'Cancel',
@@ -18,6 +20,7 @@ export const Messages = {
   roleDuplicate: 'Already granted above.',
   roleIncluded: (role: string) => `Already included in ${role}.`,
   databaseRequired: 'Enter a database.',
+  bucketRequired: 'Enter a bucket.',
   databaseChoose: 'Choose a database.',
   noDatabases: 'No databases yet. To own one, a user needs no role.',
   noRoles:

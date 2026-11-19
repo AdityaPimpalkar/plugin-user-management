@@ -1,16 +1,17 @@
-export type RoleScope = 'database' | 'cluster';
+export type RoleScope = 'database' | 'bucket' | 'cluster';
 
 export interface Role {
   name: string;
   description: string;
   scope: RoleScope;
-  // Roles this one grants too, on the same database.
+  // Roles this one grants too, on the same scoped resource.
   includes?: string[];
 }
 
 export interface RoleGrant {
   role: string;
   database?: string;
+  bucket?: string;
 }
 
 export type UserPhase = 'Pending' | 'Ready' | 'Failed' | 'Deleting';
@@ -29,8 +30,8 @@ export interface DbUser {
   ownPasswordSecret?: boolean;
 }
 
-// How users authenticate: database passwords, or API keys for models.
-export type CredentialKind = 'password' | 'apiKey';
+// How users authenticate: database passwords, model API keys, or S3 key pairs.
+export type CredentialKind = 'password' | 'apiKey' | 's3';
 
 export interface UsersResponse {
   users: DbUser[];

@@ -33,7 +33,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: InstanceUser is a user of an OpenEverest instance's database.
+        description: InstanceUser is a user of an OpenEverest instance.
         properties:
           apiVersion:
             description: |-
@@ -53,11 +53,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: InstanceUserSpec declares a database user.
+            description: InstanceUserSpec declares a user of an OpenEverest instance.
             properties:
               instanceRef:
-                description: InstanceRef is the Instance whose database the user is
-                  created in.
+                description: InstanceRef is the Instance where the user is created.
                 properties:
                   name:
                     minLength: 1
@@ -67,9 +66,10 @@ spec:
                 type: object
               passwordSecretRef:
                 description: |-
-                  PasswordSecretRef points to the user's password. When omitted, the
-                  plugin generates a password and keeps it, with a connection string, in
-                  the Secret named in status.credentialsSecret.
+                  PasswordSecretRef points to the user's primary secret (a password, API
+                  key, or secret access key, depending on the engine). When omitted, the
+                  plugin generates it and keeps it, with connection details, in the Secret
+                  named in status.credentialsSecret.
                 properties:
                   key:
                     default: password
@@ -86,9 +86,13 @@ spec:
                   instance's engine are accepted. PostgreSQL users may have none, e.g.
                   the owner of an InstanceDatabase; other engines require one.
                 items:
-                  description: RoleGrant grants a role, on a database for database-scoped
-                    roles.
+                  description: RoleGrant grants a role on one optional scoped resource.
                   properties:
+                    bucket:
+                      description: |-
+                        Bucket the role is granted on. Required for bucket-scoped roles,
+                        ignored for roles that apply to the whole instance.
+                      type: string
                     database:
                       description: |-
                         Database the role is granted on. Required for database-scoped roles,
@@ -103,7 +107,7 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
               username:
-                description: Username in the database.
+                description: Username in the instance's engine.
                 pattern: ^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$
                 type: string
             required:
@@ -179,8 +183,8 @@ spec:
                 x-kubernetes-list-type: map
               credentialsSecret:
                 description: |-
-                  CredentialsSecret is the Secret holding the user's password, and for
-                  generated passwords also its username and connection string.
+                  CredentialsSecret holds the user's primary secret and, for generated
+                  credentials, its username and connection details.
                 type: string
               declared:
                 description: |-

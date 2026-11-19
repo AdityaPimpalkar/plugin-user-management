@@ -13,6 +13,8 @@ interface RoleGrantRowProps {
   canRemove: boolean;
   // False when no role of the engine is granted on a database.
   showDatabase: boolean;
+  // False when no role of the engine is granted on an S3 bucket.
+  showBucket: boolean;
   // The databases roles can be granted on, when the instance's databases are
   // managed; the database is typed in otherwise.
   databases?: string[];
@@ -27,11 +29,13 @@ export const RoleGrantRow = ({
   showErrors,
   canRemove,
   showDatabase,
+  showBucket,
   databases,
   onChange,
   onRemove,
 }: RoleGrantRowProps) => {
   const isClusterScoped = findRole(roles, value.role)?.scope === 'cluster';
+  const isBucketScoped = findRole(roles, value.role)?.scope === 'bucket';
   // Keeps a granted database that's no longer offered, e.g. while it's deleted.
   const databaseOptions =
     databases && value.database && !databases.includes(value.database)
@@ -86,6 +90,18 @@ export const RoleGrantRow = ({
           onChange={(e) => onChange({ ...value, database: e.target.value })}
           error={showErrors && !!errors.database}
           helperText={showErrors ? errors.database : undefined}
+          sx={{ flex: 1 }}
+        />
+      )}
+      {showBucket && (
+        <TextField
+          size="small"
+          label={Messages.bucket}
+          value={isBucketScoped ? value.bucket : Messages.allBuckets}
+          disabled={!isBucketScoped}
+          onChange={(e) => onChange({ ...value, bucket: e.target.value })}
+          error={showErrors && !!errors.bucket}
+          helperText={showErrors ? errors.bucket : undefined}
           sx={{ flex: 1 }}
         />
       )}

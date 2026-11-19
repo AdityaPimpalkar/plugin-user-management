@@ -1,15 +1,14 @@
 # plugin-user-management
 
-OpenEverest plugin for managing database users and their roles, so teams stop
-sharing the admin account and don't need a database shell to onboard an
-application. For models served through the Envoy AI Gateway, the same users
-are API keys: one per application, team or person, instead of one shared key
-per model.
+OpenEverest plugin for managing instance users and their roles, so teams stop
+sharing an admin account and don't need a database or service shell to onboard
+an application. For models served through the Envoy AI Gateway, the same users
+are API keys; for SeaweedFS they are S3 identities with access-key credentials.
 
 Users are declared as Kubernetes resources, `InstanceUser`, and reconciled
-into the instance's database. Create them from the **Access** tab on the
+into the instance's engine. Create them from the **Access** tab on the
 instance page or with `kubectl`/GitOps; either way the plugin keeps the
-database in sync, stores generated credentials in a Secret applications can
+engine in sync, stores generated credentials in a Secret applications can
 mount, and drops the user when the resource is deleted. On PostgreSQL, the
 databases of an instance and their owners are declared the same way, as
 `InstanceDatabase`s, from the same tab or with `kubectl`/GitOps.
@@ -22,6 +21,7 @@ Supported providers:
 | `provider-cloudnative-pg` | CloudNativePG 1.30+, through the operator's `DatabaseRole` resource |
 | `provider-percona-postgresql` | Percona Operator for PostgreSQL, through SQL as the operator's `postgres` superuser |
 | `provider-kserve` | API keys for models on the Envoy AI Gateway, through the provider's key Secrets |
+| `provider-seaweedfs` | S3 identities, access keys and bucket-scoped IAM policies |
 | `mssql` | Microsoft SQL Server (Solanica MSSQL operator), through T-SQL as `sa` |
 | `mariadb` | MariaDB, through mariadb-operator `User`, `Grant` and `Database` resources |
 | `valkey` | Valkey (valkey-operator 0.9+), through the `ValkeyCluster`'s `spec.acl.users` |
@@ -55,8 +55,8 @@ status:
   `<name>-credentials` with keys `username`, `password` and `uri` (an
   in-cluster connection string). The Secret is owned by the InstanceUser.
   Editing its `password` rotates the password in the database.
-- `Ready` means the user exists in the database with exactly the declared
-  roles. Role changes go back to `Pending` until the database matches.
+- `Ready` means the user exists in the instance with exactly the declared
+  roles. Role changes go back to `Pending` until the engine matches.
   PostgreSQL users may have no roles, such as the owner of an
   `InstanceDatabase`; other engines require one. On PostgreSQL, `read` and
   `readWrite` are granted on one InstanceDatabase (see
@@ -66,6 +66,8 @@ status:
   are owned by their Instance, so deleting the instance deletes them.
 
 See [examples/instanceuser.yaml](examples/instanceuser.yaml) (MongoDB),
+[examples/instanceuser-seaweedfs.yaml](examples/instanceuser-seaweedfs.yaml)
+(SeaweedFS),
 [examples/instanceuser-postgresql.yaml](examples/instanceuser-postgresql.yaml)
 (CloudNativePG),
 [examples/instanceuser-percona-postgresql.yaml](examples/instanceuser-percona-postgresql.yaml)
@@ -76,6 +78,42 @@ See [examples/instanceuser.yaml](examples/instanceuser.yaml) (MongoDB),
 (MariaDB) and
 [examples/instanceuser-kserve.yaml](examples/instanceuser-kserve.yaml)
 (an API key for a model).
+
+## SeaweedFS experiment
+
+SeaweedFS users are IAM identities, not database users. The plugin declares
+native operator resources in the Instance namespace:
+
+- `S3Identity` for the IAM user;
+- `S3Credentials` for one access key / secret access key pair;
+- `S3Policy` and `S3PolicyBinding` for each bucket grant.
+
+`read`, `readWrite` and `admin` are bucket-scoped roles. They cover one existing
+S3 bucket and generate AWS-style IAM policies; the plugin does not create
+buckets in this experimental slice. A grant looks like this:
+
+```yaml
+roles:
+  - role: readWrite
+    bucket: uploads
+```
+
+The requested InstanceUser name is kept as the identity's display name. The
+actual SeaweedFS IAM name is an internal namespaced value, so an ordinary IAM
+user with the same application-facing name is not accidentally adopted.
+
+Generated credentials keep the existing `username` and `password` keys and add
+`AWS_ACCESS_KEY_ID`. `password` is the S3 secret access key. The same Secret
+also carries `endpointURL`, `region`, `forcePathStyle` and TLS hints from the
+provider's connection details. Credentials supplied through
+`passwordSecretRef` are not supported by the SeaweedFS experiment yet, because
+an S3 credential pair needs the access-key field as well as the secret-key
+field.
+
+SeaweedFS `S3Role` / OIDC STS roles are deliberately out of scope for ordinary
+user management. The experiment discovers SeaweedFS identities represented by
+`S3Identity` resources; users created directly in SeaweedFS IAM without a
+corresponding resource are not enumerated yet.
 
 ## InstanceDatabase
 

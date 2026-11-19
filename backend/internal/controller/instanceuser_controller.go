@@ -63,7 +63,7 @@ func PasswordRef(u *v1alpha1.InstanceUser) engine.SecretKeyRef {
 func ToEngineGrants(grants []v1alpha1.RoleGrant) []engine.RoleGrant {
 	out := make([]engine.RoleGrant, 0, len(grants))
 	for _, g := range grants {
-		out = append(out, engine.RoleGrant{Role: g.Role, Database: g.Database})
+		out = append(out, engine.RoleGrant{Role: g.Role, Database: g.Database, Bucket: g.Bucket})
 	}
 	return out
 }
@@ -211,7 +211,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			continue
 		}
 		s.roles = roles
-		if err := eng.ValidateUser(engine.DesiredUser{Username: u.Spec.Username, Roles: roles, Password: s.password}); err != nil {
+		desired := engine.DesiredUser{
+			Username:           u.Spec.Username,
+			Roles:              roles,
+			Password:           s.password,
+			ManagedCredentials: u.Spec.PasswordSecretRef == nil,
+		}
+		if err := eng.ValidateUser(desired); err != nil {
 			s.fail(err.Error())
 			continue
 		}
@@ -357,7 +363,12 @@ func (r *Reconciler) syncDatabase(ctx context.Context, eng engine.Engine, target
 		if s.waiting != "" {
 			roles = s.declarable
 		}
-		desired = append(desired, engine.DesiredUser{Username: s.user.Spec.Username, Roles: roles, Password: s.password})
+		desired = append(desired, engine.DesiredUser{
+			Username:           s.user.Spec.Username,
+			Roles:              roles,
+			Password:           s.password,
+			ManagedCredentials: s.user.Spec.PasswordSecretRef == nil,
+		})
 	}
 
 	if err := eng.SyncUsers(ctx, target, desired); err != nil {
@@ -506,6 +517,11 @@ func (r *Reconciler) ensureCredentials(ctx context.Context, eng engine.Engine, t
 			return err
 		}
 		secret.Data[v1alpha1.SecretKeyPassword] = []byte(pwd)
+	}
+	if err := engine.PrepareCredentialSecret(
+		ctx, eng, target, u.Spec.Username, string(secret.Data[v1alpha1.SecretKeyPassword]), secret.Data,
+	); err != nil {
+		return fmt.Errorf("prepare credentials for user %q: %w", u.Spec.Username, err)
 	}
 	secret.Data[v1alpha1.SecretKeyUsername] = []byte(u.Spec.Username)
 	// Unknown until the database is reachable; filled in on a later reconcile.

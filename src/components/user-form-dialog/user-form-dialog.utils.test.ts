@@ -21,8 +21,8 @@ describe('validateUserForm', () => {
         username: 'app',
         password: '',
         roles: [
-          { role: 'readWrite', database: 'shop' },
-          { role: 'readAnyDatabase', database: '' },
+          { role: 'readWrite', database: 'shop', bucket: '' },
+          { role: 'readAnyDatabase', database: '', bucket: '' },
         ],
       },
       roles,
@@ -37,23 +37,31 @@ describe('validateUserForm', () => {
         username: 'app',
         password: '',
         roles: [
-          { role: 'readWrite', database: ' ' },
-          { role: 'readAnyDatabase', database: '' },
-          { role: '', database: '' },
+          { role: 'readWrite', database: ' ', bucket: '' },
+          { role: 'readAnyDatabase', database: '', bucket: '' },
+          { role: '', database: '', bucket: '' },
         ],
       },
       roles,
       'create'
     );
     expect(errors.roleRows[0].database).toBeDefined();
-    expect(errors.roleRows[1]).toEqual({ role: undefined, database: undefined });
+    expect(errors.roleRows[1]).toEqual({
+      role: undefined,
+      database: undefined,
+      bucket: undefined,
+    });
     expect(errors.roleRows[2].role).toBeDefined();
     expect(hasErrors(errors)).toBe(true);
   });
 
   it('rejects short passwords and missing usernames when creating', () => {
     const errors = validateUserForm(
-      { username: ' ', password: 'short', roles: [{ role: 'readAnyDatabase', database: '' }] },
+      {
+        username: ' ',
+        password: 'short',
+        roles: [{ role: 'readAnyDatabase', database: '', bucket: '' }],
+      },
       roles,
       'create'
     );
@@ -63,7 +71,11 @@ describe('validateUserForm', () => {
 
   it('ignores username and password when editing roles', () => {
     const errors = validateUserForm(
-      { username: '', password: 'x', roles: [{ role: 'readAnyDatabase', database: '' }] },
+      {
+        username: '',
+        password: 'x',
+        roles: [{ role: 'readAnyDatabase', database: '', bucket: '' }],
+      },
       roles,
       'editRoles'
     );
@@ -81,9 +93,9 @@ describe('validateUserForm', () => {
         username: 'a',
         password: '',
         roles: [
-          { role: 'readWrite', database: 'shop' },
-          { role: 'readWrite', database: 'blog' },
-          { role: 'readWrite', database: ' shop ' },
+          { role: 'readWrite', database: 'shop', bucket: '' },
+          { role: 'readWrite', database: 'blog', bucket: '' },
+          { role: 'readWrite', database: ' shop ', bucket: '' },
         ],
       },
       roles,
@@ -102,15 +114,40 @@ describe('validateUserForm', () => {
         username: 'a',
         password: '',
         roles: [
-          { role: 'read', database: 'shop' },
-          { role: 'read', database: 'blog' },
-          { role: 'readWrite', database: 'shop' },
+          { role: 'read', database: 'shop', bucket: '' },
+          { role: 'read', database: 'blog', bucket: '' },
+          { role: 'readWrite', database: 'shop', bucket: '' },
         ],
       },
       withIncludes,
       'create'
     );
     expect(errors.roleRows.map((r) => r.role)).toEqual([
+      Messages.roleIncluded('readWrite'),
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('compares included roles on the same bucket only', () => {
+    const bucketRoles: Role[] = [
+      { name: 'read', scope: 'bucket', description: '' },
+      { name: 'readWrite', scope: 'bucket', description: '', includes: ['read'] },
+    ];
+    const errors = validateUserForm(
+      {
+        username: 'app',
+        password: '',
+        roles: [
+          { role: 'read', database: '', bucket: 'uploads' },
+          { role: 'read', database: '', bucket: 'backups' },
+          { role: 'readWrite', database: '', bucket: 'uploads' },
+        ],
+      },
+      bucketRoles,
+      'create'
+    );
+    expect(errors.roleRows.map((row) => row.role)).toEqual([
       Messages.roleIncluded('readWrite'),
       undefined,
       undefined,
@@ -123,24 +160,36 @@ describe('toRoleGrants', () => {
     expect(
       toRoleGrants(
         [
-          { role: 'readWrite', database: ' shop ' },
-          { role: 'readAnyDatabase', database: 'leftover' },
+          { role: 'readWrite', database: ' shop ', bucket: '' },
+          { role: 'readAnyDatabase', database: 'leftover', bucket: '' },
         ],
         roles
       )
     ).toEqual([{ role: 'readWrite', database: 'shop' }, { role: 'readAnyDatabase' }]);
   });
+
+  it('keeps a bucket grant and drops unrelated database input', () => {
+    const bucketRoles: Role[] = [
+      { name: 'readWrite', scope: 'bucket', description: '' },
+    ];
+    expect(
+      toRoleGrants(
+        [{ role: 'readWrite', database: 'leftover', bucket: ' uploads ' }],
+        bucketRoles
+      )
+    ).toEqual([{ role: 'readWrite', bucket: 'uploads' }]);
+  });
 });
 
 describe('initialFormValues', () => {
   it('starts with one empty role row for new users', () => {
-    expect(initialFormValues().roles).toEqual([{ role: '', database: '' }]);
+    expect(initialFormValues().roles).toEqual([{ role: '', database: '', bucket: '' }]);
   });
 
   it('pre-fills the roles of an edited user', () => {
     expect(initialFormValues([{ role: 'readAnyDatabase' }, { role: 'readWrite', database: 'x' }]).roles).toEqual([
-      { role: 'readAnyDatabase', database: '' },
-      { role: 'readWrite', database: 'x' },
+      { role: 'readAnyDatabase', database: '', bucket: '' },
+      { role: 'readWrite', database: 'x', bucket: '' },
     ]);
   });
 
@@ -152,8 +201,12 @@ describe('initialFormValues', () => {
 
   it('pre-selects the only role there is', () => {
     const invoke: Role[] = [{ name: 'invoke', scope: 'cluster', description: '' }];
-    expect(initialFormValues([], invoke).roles).toEqual([{ role: 'invoke', database: '' }]);
-    expect(initialFormValues([], roles).roles).toEqual([{ role: '', database: '' }]);
+    expect(initialFormValues([], invoke).roles).toEqual([
+      { role: 'invoke', database: '', bucket: '' },
+    ]);
+    expect(initialFormValues([], roles).roles).toEqual([
+      { role: '', database: '', bucket: '' },
+    ]);
   });
 });
 
@@ -162,10 +215,18 @@ describe('canAddRoleRow', () => {
     { name: 'pg_read_all_data', scope: 'cluster', description: '' },
     { name: 'pg_monitor', scope: 'cluster', description: '' },
   ];
-  const row = (role: string) => ({ role, database: '' });
+  const row = (role: string) => ({ role, database: '', bucket: '' });
 
   it('always allows another row when roles are granted per database', () => {
     expect(canAddRoleRow([row('readWrite'), row('readAnyDatabase')], roles)).toBe(true);
+  });
+
+  it('always allows another row when roles are granted per bucket', () => {
+    const bucketRoles: Role[] = [
+      { name: 'read', scope: 'bucket', description: '' },
+      { name: 'readWrite', scope: 'bucket', description: '' },
+    ];
+    expect(canAddRoleRow([row('read'), row('readWrite')], bucketRoles)).toBe(true);
   });
 
   it('allows one row per role when every role applies to the whole instance', () => {

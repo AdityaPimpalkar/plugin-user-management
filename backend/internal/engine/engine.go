@@ -17,6 +17,8 @@ type RoleScope string
 const (
 	// ScopeDatabase roles are granted on one database the user picks.
 	ScopeDatabase RoleScope = "database"
+	// ScopeBucket roles are granted on one object-storage bucket the user picks.
+	ScopeBucket RoleScope = "bucket"
 	// ScopeCluster roles apply to the whole instance.
 	ScopeCluster RoleScope = "cluster"
 )
@@ -31,10 +33,11 @@ type Role struct {
 	Includes []string `json:"includes,omitempty"`
 }
 
-// RoleGrant is a role granted to a user, on a database for ScopeDatabase roles.
+// RoleGrant is a role granted to a user on a scoped resource.
 type RoleGrant struct {
 	Role     string `json:"role"`
 	Database string `json:"database,omitempty"`
+	Bucket   string `json:"bucket,omitempty"`
 }
 
 // User is a user as it exists in the database.
@@ -63,6 +66,8 @@ type DesiredUser struct {
 	// Roles as returned by NormalizeRoles.
 	Roles    []RoleGrant
 	Password SecretKeyRef
+	// ManagedCredentials is true when the plugin owns the credentials Secret.
+	ManagedCredentials bool
 }
 
 // Target is the instance whose users are managed.
@@ -142,6 +147,8 @@ const (
 	CredentialPassword CredentialKind = "password"
 	// CredentialAPIKey is an API key, sent with every request.
 	CredentialAPIKey CredentialKind = "apiKey"
+	// CredentialS3 is an S3 access key ID and secret access key pair.
+	CredentialS3 CredentialKind = "s3"
 )
 
 // APIKeyEngine is implemented by engines whose users authenticate with API
@@ -150,6 +157,19 @@ const (
 type APIKeyEngine interface {
 	GenerateKey() (string, error)
 	ValidateKey(key string) error
+}
+
+// CredentialKindProvider is implemented by engines with a credential form
+// other than database passwords or model API keys.
+type CredentialKindProvider interface {
+	CredentialKind() CredentialKind
+}
+
+// CredentialSecretPreparer is implemented by engines that need another field
+// in a plugin-owned credential Secret, such as an S3 access key ID. The
+// function may add fields but must preserve fields it does not own.
+type CredentialSecretPreparer interface {
+	PrepareCredentialSecret(ctx context.Context, target Target, username, password string, data map[string][]byte) error
 }
 
 // ConnectionPropertiesProvider is implemented by engines whose clients need
@@ -248,10 +268,23 @@ type Resyncer interface {
 
 // CredentialKindOf returns how users of the engine authenticate.
 func CredentialKindOf(e Engine) CredentialKind {
+	if k, ok := e.(CredentialKindProvider); ok {
+		return k.CredentialKind()
+	}
 	if _, ok := e.(APIKeyEngine); ok {
 		return CredentialAPIKey
 	}
 	return CredentialPassword
+}
+
+// PrepareCredentialSecret adds engine-specific fields to a plugin-owned
+// credentials Secret.
+func PrepareCredentialSecret(ctx context.Context, e Engine, target Target, username, password string, data map[string][]byte) error {
+	p, ok := e.(CredentialSecretPreparer)
+	if !ok {
+		return nil
+	}
+	return p.PrepareCredentialSecret(ctx, target, username, password, data)
 }
 
 // GeneratePassword returns a new password, or API key, for a user of the engine.

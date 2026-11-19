@@ -122,18 +122,27 @@ func newTestEnv(t *testing.T, provider string, instanceStatus, connectionStatus 
 	eng := &fakeEngine{}
 	dbEng := &fakeDBEngine{fakeEngine: eng}
 	var registered engine.Engine = eng
-	if provider == keyProvider {
+	switch provider {
+	case keyProvider:
 		registered = &fakeKeyEngine{eng}
+	case s3Provider:
+		registered = &fakeS3Engine{eng}
 	}
 	s := &server{
 		everest: newEverestClient(fakeEverest(t, provider, instanceStatus, connectionStatus).URL),
 		kube:    kube,
-		engines: map[string]engine.Engine{"percona-server-mongodb": eng, keyProvider: registered, dbProvider: dbEng},
+		engines: map[string]engine.Engine{
+			"percona-server-mongodb": eng,
+			keyProvider:              registered,
+			dbProvider:               dbEng,
+			s3Provider:               registered,
+		},
 	}
 	return &testEnv{t: t, kube: kube, engine: eng, dbEngine: dbEng, h: newMux(s)}
 }
 
 const keyProvider = "provider-kserve"
+const s3Provider = "provider-seaweedfs"
 
 // fakeKeyEngine is an engine whose users authenticate with API keys and
 // need a model name to connect.
@@ -152,6 +161,28 @@ func (f *fakeKeyEngine) ValidateKey(key string) error {
 
 func (f *fakeKeyEngine) ConnectionProperties(context.Context, engine.Target) (map[string]string, error) {
 	return map[string]string{"model": "qwen3-4b"}, nil
+}
+
+type fakeS3Engine struct{ *fakeEngine }
+
+func (f *fakeS3Engine) CredentialKind() engine.CredentialKind {
+	return engine.CredentialS3
+}
+
+func (f *fakeS3Engine) PrepareCredentialSecret(
+	_ context.Context,
+	_ engine.Target,
+	_, _ string,
+	data map[string][]byte,
+) error {
+	if len(data["AWS_ACCESS_KEY_ID"]) == 0 {
+		data["AWS_ACCESS_KEY_ID"] = []byte("AKIAEXPERIMENT000001")
+	}
+	return nil
+}
+
+func (f *fakeS3Engine) ConnectionProperties(context.Context, engine.Target) (map[string]string, error) {
+	return map[string]string{"endpointURL": "https://s3.ns.svc:8334", "region": "us-east-1"}, nil
 }
 
 func (e *testEnv) do(method, target, body string) *httptest.ResponseRecorder {
@@ -265,6 +296,7 @@ func TestCreateUserDeclaresInstanceUser(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
+
 	var creds credentialsResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &creds); err != nil {
 		t.Fatal(err)
@@ -289,6 +321,40 @@ func TestCreateUserDeclaresInstanceUser(t *testing.T) {
 	}
 	if creds.URI != "mongodb://Shop_App@x:"+creds.Password+"@host/" {
 		t.Errorf("uri = %s", creds.URI)
+	}
+}
+
+func TestCreateS3UserPreparesAccessKey(t *testing.T) {
+	env := newTestEnv(t, s3Provider, http.StatusOK, http.StatusOK)
+	rec := env.do(
+		http.MethodPost,
+		"/api/users"+testQuery,
+		`{"username":"uploader","roles":[{"role":"read","bucket":"uploads"}]}`,
+	)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	var creds credentialsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &creds); err != nil {
+		t.Fatal(err)
+	}
+	if creds.Properties["AWS_ACCESS_KEY_ID"] != "AKIAEXPERIMENT000001" ||
+		creds.Properties["endpointURL"] != "https://s3.ns.svc:8334" {
+		t.Fatalf("credentials properties = %v", creds.Properties)
+	}
+	users := env.instanceUsers()
+	secret := env.secret(users[0].Name + "-credentials")
+	if string(secret.Data["AWS_ACCESS_KEY_ID"]) != "AKIAEXPERIMENT000001" {
+		t.Fatalf("secret data = %v", secret.Data)
+	}
+
+	rec = env.do(http.MethodGet, "/api/users"+testQuery, "")
+	var usersResp usersResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &usersResp); err != nil {
+		t.Fatal(err)
+	}
+	if usersResp.CredentialKind != engine.CredentialS3 {
+		t.Fatalf("credential kind = %q", usersResp.CredentialKind)
 	}
 }
 

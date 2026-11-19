@@ -188,9 +188,10 @@ func TestNewUserLifecycle(t *testing.T) {
 		t.Errorf("secret owners = %v", secret.OwnerReferences)
 	}
 	want := []engine.DesiredUser{{
-		Username: "app",
-		Roles:    []engine.RoleGrant{{Role: "read", Database: "shop"}},
-		Password: engine.SecretKeyRef{Name: "app-credentials", Key: "password"},
+		Username:           "app",
+		Roles:              []engine.RoleGrant{{Role: "read", Database: "shop"}},
+		Password:           engine.SecretKeyRef{Name: "app-credentials", Key: "password"},
+		ManagedCredentials: true,
 	}}
 	if len(h.engine.synced) != 1 || !reflect.DeepEqual(h.engine.synced[0], want) {
 		t.Fatalf("synced = %+v", h.engine.synced)

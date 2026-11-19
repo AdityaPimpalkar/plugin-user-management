@@ -254,7 +254,7 @@ func (s *server) instanceUser(ctx context.Context, target engine.Target, id stri
 func toAPIGrants(grants []engine.RoleGrant) []v1alpha1.RoleGrant {
 	out := make([]v1alpha1.RoleGrant, 0, len(grants))
 	for _, g := range grants {
-		out = append(out, v1alpha1.RoleGrant{Role: g.Role, Database: g.Database})
+		out = append(out, v1alpha1.RoleGrant{Role: g.Role, Database: g.Database, Bucket: g.Bucket})
 	}
 	return out
 }
@@ -370,7 +370,8 @@ func (s *server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := a.engine.ValidateUser(engine.DesiredUser{Username: req.Username, Roles: roles}); err != nil {
+	desired := engine.DesiredUser{Username: req.Username, Roles: roles, ManagedCredentials: true}
+	if err := a.engine.ValidateUser(desired); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -424,6 +425,19 @@ func (s *server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 			v1alpha1.SecretKeyUsername: []byte(req.Username),
 			v1alpha1.SecretKeyPassword: []byte(pwd),
 		},
+	}
+	if err := engine.PrepareCredentialSecret(ctx, a.engine, a.target, req.Username, pwd, secret.Data); err != nil {
+		writeError(w, err)
+		return
+	}
+	if creds.Properties == nil {
+		creds.Properties = map[string]string{}
+	}
+	for k, v := range credentialProperties(a.engine, secret) {
+		creds.Properties[k] = v
+	}
+	if len(creds.Properties) == 0 {
+		creds.Properties = nil
 	}
 	if creds.URI != "" {
 		secret.Data[v1alpha1.SecretKeyURI] = []byte(creds.URI)
@@ -497,17 +511,24 @@ func credentialsOf(eng engine.Engine, u *v1alpha1.InstanceUser, secret *corev1.S
 		URI:      string(secret.Data[v1alpha1.SecretKeyURI]),
 		Secret:   secret.Name,
 	}
-	if _, ok := eng.(engine.ConnectionPropertiesProvider); ok {
-		for k, v := range secret.Data {
-			if k != v1alpha1.SecretKeyUsername && k != v1alpha1.SecretKeyPassword && k != v1alpha1.SecretKeyURI {
-				if creds.Properties == nil {
-					creds.Properties = map[string]string{}
-				}
-				creds.Properties[k] = string(v)
-			}
+	creds.Properties = credentialProperties(eng, secret)
+	return creds
+}
+
+func credentialProperties(eng engine.Engine, secret *corev1.Secret) map[string]string {
+	if _, ok := eng.(engine.ConnectionPropertiesProvider); !ok {
+		return nil
+	}
+	properties := map[string]string{}
+	for k, v := range secret.Data {
+		if k != v1alpha1.SecretKeyUsername && k != v1alpha1.SecretKeyPassword && k != v1alpha1.SecretKeyURI {
+			properties[k] = string(v)
 		}
 	}
-	return creds
+	if len(properties) == 0 {
+		return nil
+	}
+	return properties
 }
 
 // GET /api/users/{id}/credentials?k8sCluster=&namespace=&instance=
@@ -562,6 +583,10 @@ func (s *server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	orig := secret.DeepCopy()
 	secret.Data[v1alpha1.SecretKeyPassword] = []byte(pwd)
 	delete(secret.Data, v1alpha1.SecretKeyURI)
+	if err := engine.PrepareCredentialSecret(ctx, a.engine, a.target, u.Spec.Username, pwd, secret.Data); err != nil {
+		writeError(w, err)
+		return
+	}
 	if uri, err := a.engine.ConnectionURI(ctx, a.target, u.Spec.Username, pwd); err == nil {
 		secret.Data[v1alpha1.SecretKeyURI] = []byte(uri)
 	}

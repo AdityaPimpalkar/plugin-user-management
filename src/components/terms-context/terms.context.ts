@@ -1,8 +1,7 @@
 import { createContext, useContext } from 'react';
 import { CredentialKind } from 'types/users.types';
 
-// Wording that depends on how the instance's users authenticate: database
-// users with passwords, or consumers of a model with API keys.
+// Wording that depends on how the instance's users authenticate.
 export interface Terms {
   title: string;
   subtitle: string;
@@ -78,8 +77,42 @@ export const API_KEY_TERMS: Terms = {
     `The API key of ${username} will be revoked. Requests with it will be rejected within seconds.`,
 };
 
-export const termsFor = (kind?: CredentialKind): Terms =>
-  kind === 'apiKey' ? API_KEY_TERMS : PASSWORD_TERMS;
+export const S3_TERMS: Terms = {
+  title: 'S3 users',
+  subtitle: 'Identities with their own access key and bucket-scoped permissions.',
+  createUser: 'Create S3 user',
+  createTitle: 'Create S3 user',
+  username: 'User name',
+  noUsers:
+    'No S3 users yet. Create one per application instead of sharing the instance admin key.',
+  databaseError: (reason) => `S3 users can't be shown or applied right now: ${reason}`,
+  systemUserHint: 'Created and used by the SeaweedFS operator; it cannot be changed here.',
+  unmanagedUserHint: 'Created outside OpenEverest; change it directly in SeaweedFS.',
+  secret: 'Secret access key',
+  customSecret: true,
+  uri: 'S3 endpoint (in-cluster)',
+  pendingUri:
+    'The S3 endpoint appears once the instance is reachable; it is also kept in the Secret.',
+  resetPassword: 'Rotate secret key',
+  resetPasswordTitle: 'Rotate secret access key?',
+  resetPasswordBody: (username) =>
+    `A new secret key will be generated for ${username}. Applications using the current key will lose access after SeaweedFS applies the change.`,
+  passwordResetTitle: (username) => `New secret access key for ${username}`,
+  createdTitle: (username) => `S3 user ${username} created`,
+  deleteBody: (username) =>
+    `${username} and its access key will be removed from SeaweedFS. Applications using it will lose access.`,
+};
+
+export const termsFor = (kind?: CredentialKind): Terms => {
+  switch (kind) {
+    case 'apiKey':
+      return API_KEY_TERMS;
+    case 's3':
+      return S3_TERMS;
+    default:
+      return PASSWORD_TERMS;
+  }
+};
 
 export const TermsContext = createContext<Terms>(PASSWORD_TERMS);
 

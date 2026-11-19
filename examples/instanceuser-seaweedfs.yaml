@@ -1,0 +1,12 @@
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceUser
+metadata:
+  name: uploads-uploader
+  namespace: team-a
+spec:
+  instanceRef:
+    name: object-store
+  username: uploads_app
+  roles:
+    - role: readWrite
+      bucket: uploads

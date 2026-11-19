@@ -1,5 +1,5 @@
 import { Role, RoleGrant } from 'types/users.types';
-import { findRole, hasDatabaseRoles } from 'utils/roles.utils';
+import { findRole, hasScopedRoles } from 'utils/roles.utils';
 import {
   EMPTY_ROLE_GRANT,
   PASSWORD_MAX_LENGTH,
@@ -21,37 +21,47 @@ export const initialFormValues = (
 ): UserFormValues => {
   let rows: RoleGrantDraft[] = rolesRequired ? [EMPTY_ROLE_GRANT] : [];
   if (grants.length) {
-    rows = grants.map(({ role, database }) => ({ role, database: database ?? '' }));
+    rows = grants.map(({ role, database, bucket }) => ({
+      role,
+      database: database ?? '',
+      bucket: bucket ?? '',
+    }));
   } else if (rolesRequired && roles.length === 1) {
     rows = [{ ...EMPTY_ROLE_GRANT, role: roles[0].name }];
   }
   return { username: '', password: '', roles: rows };
 };
 
-// Database-scoped roles can be granted on many databases; otherwise each role
-// can be granted once.
+// Scoped roles can be granted repeatedly on different databases or buckets;
+// otherwise each role can be granted once.
 export const canAddRoleRow = (rows: RoleGrantDraft[], roles: Role[]) =>
-  hasDatabaseRoles(roles) || rows.length < roles.length;
+  hasScopedRoles(roles) || rows.length < roles.length;
 
 const isDatabaseScoped = (roles: Role[], name: string) =>
   findRole(roles, name)?.scope === 'database';
 
-// The database a row grants its role on; instance-wide roles have none.
-const grantDatabase = (roles: Role[], { role, database }: RoleGrantDraft) =>
-  isDatabaseScoped(roles, role) ? database.trim() : '';
+const isBucketScoped = (roles: Role[], name: string) =>
+  findRole(roles, name)?.scope === 'bucket';
+
+const grantTarget = (roles: Role[], { role, database, bucket }: RoleGrantDraft) =>
+  isDatabaseScoped(roles, role)
+    ? `database:${database.trim()}`
+    : isBucketScoped(roles, role)
+      ? `bucket:${bucket.trim()}`
+      : '';
 
 // Why a row adds nothing to the others: it repeats an earlier row, or another
 // row's role already includes it. The backend would drop it silently.
 const redundantRoleError = (roles: Role[], rows: RoleGrantDraft[], index: number) => {
   const row = rows[index];
-  const database = grantDatabase(roles, row);
-  const sameDatabase = (other: RoleGrantDraft, i: number) =>
-    i !== index && !!other.role && grantDatabase(roles, other) === database;
-  if (rows.some((other, i) => i < index && sameDatabase(other, i) && other.role === row.role)) {
+  const target = grantTarget(roles, row);
+  const sameTarget = (other: RoleGrantDraft, i: number) =>
+    i !== index && !!other.role && grantTarget(roles, other) === target;
+  if (rows.some((other, i) => i < index && sameTarget(other, i) && other.role === row.role)) {
     return Messages.roleDuplicate;
   }
   const including = rows.find(
-    (other, i) => sameDatabase(other, i) && findRole(roles, other.role)?.includes?.includes(row.role)
+    (other, i) => sameTarget(other, i) && findRole(roles, other.role)?.includes?.includes(row.role)
   );
   return including ? Messages.roleIncluded(including.role) : undefined;
 };
@@ -77,19 +87,26 @@ export const validateUserForm = (
   if (rolesRequired && values.roles.length === 0) {
     errors.roles = Messages.rolesRequired;
   }
-  errors.roleRows = values.roles.map(({ role, database }, index) => ({
+  errors.roleRows = values.roles.map(({ role, database, bucket }, index) => ({
     role: role ? redundantRoleError(roles, values.roles, index) : Messages.roleRequired,
     database:
       isDatabaseScoped(roles, role) && !database.trim() ? Messages.databaseRequired : undefined,
+    bucket: isBucketScoped(roles, role) && !bucket.trim() ? Messages.bucketRequired : undefined,
   }));
   return errors;
 };
 
 export const hasErrors = ({ roleRows, ...fieldErrors }: UserFormErrors) =>
   Object.values(fieldErrors).some(Boolean) ||
-  roleRows.some((row) => row.role || row.database);
+  roleRows.some((row) => row.role || row.database || row.bucket);
 
 export const toRoleGrants = (drafts: RoleGrantDraft[], roles: Role[]): RoleGrant[] =>
-  drafts.map(({ role, database }) =>
-    isDatabaseScoped(roles, role) ? { role, database: database.trim() } : { role }
-  );
+  drafts.map(({ role, database, bucket }) => {
+    if (isDatabaseScoped(roles, role)) {
+      return { role, database: database.trim() };
+    }
+    if (isBucketScoped(roles, role)) {
+      return { role, bucket: bucket.trim() };
+    }
+    return { role };
+  });

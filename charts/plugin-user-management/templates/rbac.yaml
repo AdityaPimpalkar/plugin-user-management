@@ -72,6 +72,14 @@ rules:
   - apiGroups: ["valkey.io"]
     resources: ["valkeynodes"]
     verbs: ["list"]
+  # SeaweedFS: native IAM identities, access keys, policies and bindings are
+  # created per user. The Seaweed CR is read to verify the instance exists.
+  - apiGroups: ["seaweed.seaweedfs.com"]
+    resources: ["seaweeds"]
+    verbs: ["get"]
+  - apiGroups: ["seaweed.seaweedfs.com"]
+    resources: ["s3identities", "s3credentials", "s3policies", "s3policybindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

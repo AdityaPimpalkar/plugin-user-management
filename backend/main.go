@@ -41,6 +41,7 @@ import (
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/mssql"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/perconapg"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/pgext"
+	"github.com/openeverest/plugin-user-management/backend/internal/engine/seaweed"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/valkey"
 )
 
@@ -203,6 +204,7 @@ func main() {
 		kserve.ProviderName:    kserve.New(kube, dyn),
 		mssql.ProviderName:     mssql.New(kube, dyn),
 		valkey.ProviderName:    valkey.New(kube, dyn),
+		seaweed.ProviderName:   seaweed.New(kube, dyn),
 	}
 
 	mgr, err := newManager(cfg)

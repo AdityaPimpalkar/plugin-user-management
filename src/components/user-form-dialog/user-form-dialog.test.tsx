@@ -6,6 +6,7 @@ import { Messages } from './user-form-dialog.messages';
 import {
   API_KEY_TERMS,
   PASSWORD_TERMS,
+  S3_TERMS,
   TermsContext,
 } from 'components/terms-context/terms.context';
 
@@ -119,6 +120,34 @@ describe('UserFormDialog', () => {
       <UserFormDialog mode="create" roles={roles} isSubmitting={false} onSubmit={vi.fn()} onClose={vi.fn()} />
     );
     expect(screen.getByLabelText(Messages.database)).toBeTruthy();
+  });
+
+  it('grants an S3 role on a bucket', () => {
+    const onSubmit = vi.fn();
+    const bucketRoles: Role[] = [
+      { name: 'readWrite', scope: 'bucket', description: 'Read and write objects' },
+    ];
+    render(
+      <TermsContext.Provider value={S3_TERMS}>
+        <UserFormDialog
+          mode="create"
+          roles={bucketRoles}
+          isSubmitting={false}
+          onSubmit={onSubmit}
+          onClose={vi.fn()}
+        />
+      </TermsContext.Provider>
+    );
+    expect(screen.queryByLabelText(Messages.database)).toBeNull();
+    fireEvent.change(screen.getByLabelText(S3_TERMS.username), { target: { value: 'uploader' } });
+    fireEvent.change(screen.getByLabelText(Messages.bucket), { target: { value: 'uploads' } });
+    fireEvent.click(screen.getByRole('button', { name: Messages.create }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      username: 'uploader',
+      password: undefined,
+      roles: [{ role: 'readWrite', bucket: 'uploads' }],
+    });
   });
 });
 

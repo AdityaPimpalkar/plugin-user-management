@@ -23,7 +23,7 @@ import {
 } from './user-form-dialog.utils';
 import { Messages } from './user-form-dialog.messages';
 import { useTerms } from 'components/terms-context/terms.context';
-import { hasDatabaseRoles } from 'utils/roles.utils';
+import { hasBucketRoles, hasDatabaseRoles } from 'utils/roles.utils';
 
 interface UserFormDialogProps {
   mode: UserFormMode;
@@ -118,6 +118,7 @@ export const UserFormDialog = ({
                 showErrors={submitted}
                 canRemove={values.roles.length > 1 || !rolesRequired}
                 showDatabase={hasDatabaseRoles(roles)}
+                showBucket={hasBucketRoles(roles)}
                 databases={databases}
                 onChange={(next) => setRoleRow(index, next)}
                 onRemove={() =>

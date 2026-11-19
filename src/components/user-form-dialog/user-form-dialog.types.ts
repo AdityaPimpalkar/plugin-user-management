@@ -3,6 +3,7 @@ export type UserFormMode = 'create' | 'editRoles';
 export interface RoleGrantDraft {
   role: string;
   database: string;
+  bucket: string;
 }
 
 export interface UserFormValues {
@@ -15,6 +16,7 @@ export interface UserFormValues {
 export interface RoleGrantErrors {
   role?: string;
   database?: string;
+  bucket?: string;
 }
 
 export interface UserFormErrors {
@@ -24,7 +26,7 @@ export interface UserFormErrors {
   roleRows: RoleGrantErrors[];
 }
 
-export const EMPTY_ROLE_GRANT: RoleGrantDraft = { role: '', database: '' };
+export const EMPTY_ROLE_GRANT: RoleGrantDraft = { role: '', database: '', bucket: '' };
 
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;

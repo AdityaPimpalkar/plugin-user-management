@@ -40,22 +40,25 @@ type SecretKeySelector struct {
 	Key string `json:"key,omitempty"`
 }
 
-// RoleGrant grants a role, on a database for database-scoped roles.
+// RoleGrant grants a role on one optional scoped resource.
 type RoleGrant struct {
 	// +kubebuilder:validation:MinLength=1
 	Role string `json:"role"`
 	// Database the role is granted on. Required for database-scoped roles,
 	// ignored for roles that apply to the whole instance.
 	Database string `json:"database,omitempty"`
+	// Bucket the role is granted on. Required for bucket-scoped roles,
+	// ignored for roles that apply to the whole instance.
+	Bucket string `json:"bucket,omitempty"`
 }
 
-// InstanceUserSpec declares a database user.
+// InstanceUserSpec declares a user of an OpenEverest instance.
 // +kubebuilder:validation:XValidation:rule="self.instanceRef == oldSelf.instanceRef",message="instanceRef is immutable"
 // +kubebuilder:validation:XValidation:rule="self.username == oldSelf.username",message="username is immutable"
 type InstanceUserSpec struct {
-	// InstanceRef is the Instance whose database the user is created in.
+	// InstanceRef is the Instance where the user is created.
 	InstanceRef InstanceReference `json:"instanceRef"`
-	// Username in the database.
+	// Username in the instance's engine.
 	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$`
 	Username string `json:"username"`
 	// Roles granted to the user. Only roles the plugin offers for the
@@ -64,9 +67,10 @@ type InstanceUserSpec struct {
 	// +optional
 	// +listType=atomic
 	Roles []RoleGrant `json:"roles,omitempty"`
-	// PasswordSecretRef points to the user's password. When omitted, the
-	// plugin generates a password and keeps it, with a connection string, in
-	// the Secret named in status.credentialsSecret.
+	// PasswordSecretRef points to the user's primary secret (a password, API
+	// key, or secret access key, depending on the engine). When omitted, the
+	// plugin generates it and keeps it, with connection details, in the Secret
+	// named in status.credentialsSecret.
 	// +optional
 	PasswordSecretRef *SecretKeySelector `json:"passwordSecretRef,omitempty"`
 }
@@ -77,8 +81,8 @@ type InstanceUserStatus struct {
 	Phase string `json:"phase,omitempty"`
 	// +optional
 	Message string `json:"message,omitempty"`
-	// CredentialsSecret is the Secret holding the user's password, and for
-	// generated passwords also its username and connection string.
+	// CredentialsSecret holds the user's primary secret and, for generated
+	// credentials, its username and connection details.
 	// +optional
 	CredentialsSecret string `json:"credentialsSecret,omitempty"`
 	// Declared is set once the plugin has declared the user for the
@@ -94,7 +98,7 @@ type InstanceUserStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// InstanceUser is a user of an OpenEverest instance's database.
+// InstanceUser is a user of an OpenEverest instance.
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

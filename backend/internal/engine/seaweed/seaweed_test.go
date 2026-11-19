@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/openeverest/plugin-user-management/backend/internal/engine"
 )
@@ -58,6 +59,7 @@ func credentialsSecret(accessKey string) *corev1.Secret {
 func newEngine(objects []runtime.Object, secrets ...*corev1.Secret) *Engine {
 	listKinds := map[schema.GroupVersionResource]string{
 		seaweedResource:    "SeaweedList",
+		bucketResource:     "BucketList",
 		identityResource:   "S3IdentityList",
 		credentialResource: "S3CredentialsList",
 		policyResource:     "S3PolicyList",
@@ -152,6 +154,11 @@ func TestCredentialKindAndAccessKey(t *testing.T) {
 		ManagedCredentials: false,
 	}); !errors.Is(err, engine.ErrInvalid) {
 		t.Fatalf("external credentials error = %v", err)
+	}
+	if err := e.ValidateUser(engine.DesiredUser{
+		Username: "alice", ManagedCredentials: true,
+	}); err != nil {
+		t.Fatalf("bootstrap identity with temporarily withheld roles: %v", err)
 	}
 }
 
@@ -269,6 +276,43 @@ func TestDropUserWaitsForIdentityFinalizer(t *testing.T) {
 	}
 }
 
+func TestDropUserWaitsForOwnedBucket(t *testing.T) {
+	e := newEngine([]runtime.Object{seaweed()})
+	user := desiredUser(engine.RoleGrant{Role: RoleRead, Bucket: "uploads"})
+	if err := e.SyncUsers(context.Background(), target, []engine.DesiredUser{user}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SyncBucket(context.Background(), target, engine.DesiredBucket{
+		Name: "uploads", Owner: user.Username,
+	}); !errors.Is(err, engine.ErrInProgress) {
+		t.Fatalf("SyncBucket error = %v", err)
+	}
+	err := e.DropUser(context.Background(), target, user.Username)
+	if !errors.Is(err, engine.ErrInProgress) || !strings.Contains(err.Error(), `bucket "uploads"`) {
+		t.Fatalf("DropUser error = %v", err)
+	}
+}
+
+func TestDropUserWaitsForCrossNamespaceOwnedBucket(t *testing.T) {
+	foreign := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": bucketResource.GroupVersion().String(),
+		"kind":       "Bucket",
+		"metadata": map[string]any{
+			"name": "foreign-uploads", "namespace": "apps",
+		},
+		"spec": map[string]any{
+			"clusterRef": map[string]any{"name": target.Instance, "namespace": target.Namespace},
+			"name":       "uploads",
+			"owner":      identityName(target, "alice"),
+		},
+	}}
+	e := newEngine([]runtime.Object{seaweed(), foreign})
+	err := e.DropUser(context.Background(), target, "alice")
+	if !errors.Is(err, engine.ErrInProgress) || !strings.Contains(err.Error(), `bucket "uploads"`) {
+		t.Fatalf("DropUser error = %v", err)
+	}
+}
+
 func TestConnectionAndNotReady(t *testing.T) {
 	e := newEngine([]runtime.Object{seaweed()}, connectionSecret())
 	uri, err := e.ConnectionURI(context.Background(), target, "alice", "secret")
@@ -284,6 +328,93 @@ func TestConnectionAndNotReady(t *testing.T) {
 	_, err = missing.ListUsers(context.Background(), target)
 	if !errors.Is(err, engine.ErrNotReady) {
 		t.Fatalf("ListUsers error = %v, want ErrNotReady", err)
+	}
+}
+
+func TestBucketLifecycle(t *testing.T) {
+	e := newEngine([]runtime.Object{seaweed()})
+	desired := engine.DesiredBucket{Name: "uploads", Owner: "alice"}
+	if err := e.ValidateBucket(desired.Name); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SyncBucket(context.Background(), target, desired); !errors.Is(err, engine.ErrInProgress) {
+		t.Fatalf("initial SyncBucket error = %v, want ErrInProgress", err)
+	}
+	obj, err := e.dyn.Resource(bucketResource).Namespace(target.Namespace).Get(
+		context.Background(), bucketName(target, desired.Name), metav1.GetOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _, _ := unstructured.NestedString(obj.Object, "spec", "owner")
+	if owner != identityName(target, desired.Owner) {
+		t.Fatalf("bucket owner = %q, want %q", owner, identityName(target, desired.Owner))
+	}
+	obj.Object["status"] = map[string]any{
+		"phase": "Ready", "observedGeneration": int64(0), "ownerIdentity": owner,
+	}
+	if _, err := e.dyn.Resource(bucketResource).Namespace(target.Namespace).Update(
+		context.Background(), obj, metav1.UpdateOptions{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SyncBucket(context.Background(), target, desired); err != nil {
+		t.Fatalf("ready SyncBucket: %v", err)
+	}
+	buckets, err := e.ListBuckets(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(buckets) != 1 || buckets[0].Name != desired.Name {
+		t.Fatalf("ListBuckets = %+v", buckets)
+	}
+	if err := e.ReleaseBucket(context.Background(), target, desired.Name, true); !errors.Is(err, engine.ErrInProgress) {
+		t.Fatalf("ReleaseBucket error = %v, want ErrInProgress", err)
+	}
+	actions := e.dyn.(*dynamicfake.FakeDynamicClient).Actions()
+	foundDeletePolicy := false
+	for _, action := range actions {
+		update, ok := action.(k8stesting.UpdateAction)
+		if !ok || update.GetResource() != bucketResource {
+			continue
+		}
+		value := update.GetObject().(*unstructured.Unstructured)
+		policy, _, _ := unstructured.NestedString(value.Object, "spec", "reclaimPolicy")
+		if policy == "Delete" {
+			foundDeletePolicy = true
+		}
+	}
+	if !foundDeletePolicy {
+		t.Fatal("ReleaseBucket did not update the native bucket reclaim policy to Delete")
+	}
+}
+
+func TestBucketAlreadyExistsIsNotTakenOver(t *testing.T) {
+	e := newEngine([]runtime.Object{seaweed()})
+	desired := engine.DesiredBucket{Name: "uploads"}
+	if err := e.SyncBucket(context.Background(), target, desired); !errors.Is(err, engine.ErrInProgress) {
+		t.Fatalf("initial SyncBucket error = %v", err)
+	}
+	obj, err := e.dyn.Resource(bucketResource).Namespace(target.Namespace).Get(
+		context.Background(), bucketName(target, desired.Name), metav1.GetOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj.Object["status"] = map[string]any{
+		"phase": "Failed", "observedGeneration": int64(0),
+		"message": "bucket already exists",
+		"conditions": []any{map[string]any{
+			"type": "BucketAlreadyExists", "status": "True", "message": "bucket already exists",
+		}},
+	}
+	if _, err := e.dyn.Resource(bucketResource).Namespace(target.Namespace).Update(
+		context.Background(), obj, metav1.UpdateOptions{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SyncBucket(context.Background(), target, desired); !errors.Is(err, engine.ErrInvalid) {
+		t.Fatalf("SyncBucket takeover error = %v, want ErrInvalid", err)
 	}
 }
 

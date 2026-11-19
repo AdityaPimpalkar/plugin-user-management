@@ -3,6 +3,7 @@ export const Messages = {
   sections: {
     users: 'Users',
     databases: 'Databases',
+    buckets: 'Buckets',
   },
   sectionsLabel: 'Access sections',
 };

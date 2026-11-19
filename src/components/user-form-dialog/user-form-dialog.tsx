@@ -37,6 +37,8 @@ interface UserFormDialogProps {
   rolesRequired?: boolean;
   // The databases database-scoped roles can be granted on, when managed.
   databases?: string[];
+  // Buckets bucket-scoped roles can be granted on, when listed by the engine.
+  buckets?: string[];
   onSubmit: (user: NewUser) => void;
   onClose: () => void;
 }
@@ -50,6 +52,7 @@ export const UserFormDialog = ({
   error,
   rolesRequired = true,
   databases,
+  buckets,
   onSubmit,
   onClose,
 }: UserFormDialogProps) => {
@@ -120,6 +123,7 @@ export const UserFormDialog = ({
                 showDatabase={hasDatabaseRoles(roles)}
                 showBucket={hasBucketRoles(roles)}
                 databases={databases}
+                buckets={buckets}
                 onChange={(next) => setRoleRow(index, next)}
                 onRemove={() =>
                   setValues((v) => ({ ...v, roles: v.roles.filter((_, i) => i !== index) }))

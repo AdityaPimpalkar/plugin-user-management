@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -64,6 +65,13 @@ func (e *Engine) ValidateUser(user engine.DesiredUser) error {
 	}
 	if !user.ManagedCredentials {
 		return fmt.Errorf("%w: SeaweedFS users currently require plugin-managed credentials", engine.ErrInvalid)
+	}
+	// The controller may temporarily withhold every role while a managed
+	// InstanceBucket is still becoming available. The identity and key still
+	// need to exist first so that it can own the bucket. The HTTP create path
+	// already requires NormalizeRoles to receive at least one declared role.
+	if len(user.Roles) == 0 {
+		return nil
 	}
 	_, err := e.NormalizeRoles(user.Roles)
 	return err
@@ -269,6 +277,157 @@ func (e *Engine) ListUsers(ctx context.Context, target engine.Target) ([]engine.
 	return users, nil
 }
 
+// ValidateBucket implements engine.BucketEngine with the operator's S3 bucket
+// naming contract.
+func (e *Engine) ValidateBucket(name string) error {
+	if !validBucketName(name) {
+		return fmt.Errorf("%w: %q is not a valid S3 bucket name", engine.ErrInvalid, name)
+	}
+	return nil
+}
+
+// ListBuckets implements engine.BucketEngine. Buckets represented by native
+// Bucket CRs are visible; buckets created directly in SeaweedFS without a CR
+// are not discoverable through Kubernetes.
+func (e *Engine) ListBuckets(ctx context.Context, target engine.Target) ([]engine.Bucket, error) {
+	if _, err := e.dyn.Resource(seaweedResource).Namespace(target.Namespace).Get(
+		ctx, target.Instance, metav1.GetOptions{},
+	); apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("%w: Seaweed cluster is not found", engine.ErrNotReady)
+	} else if err != nil {
+		return nil, fmt.Errorf("get Seaweed cluster: %w", err)
+	}
+	list, err := e.dyn.Resource(bucketResource).Namespace(target.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list Bucket resources: %w", err)
+	}
+	owners, err := e.identityDisplayNames(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	buckets := make([]engine.Bucket, 0, len(list.Items))
+	for i := range list.Items {
+		obj := &list.Items[i]
+		if !matchingBucket(obj, target) {
+			continue
+		}
+		name, _, _ := unstructured.NestedString(obj.Object, "spec", "name")
+		if name == "" {
+			name = obj.GetName()
+		}
+		owner, _, _ := unstructured.NestedString(obj.Object, "status", "ownerIdentity")
+		if visible := owners[owner]; visible != "" {
+			owner = visible
+		}
+		buckets = append(buckets, engine.Bucket{Name: name, Owner: owner})
+	}
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Name < buckets[j].Name })
+	return buckets, nil
+}
+
+func (e *Engine) identityDisplayNames(ctx context.Context, target engine.Target) (map[string]string, error) {
+	list, err := e.dyn.Resource(identityResource).Namespace(target.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list S3Identity resources: %w", err)
+	}
+	owners := map[string]string{}
+	for i := range list.Items {
+		identity := &list.Items[i]
+		if !matchingIdentity(identity, target) {
+			continue
+		}
+		iamName, _, _ := unstructured.NestedString(identity.Object, "spec", "name")
+		owners[iamName] = identityUsername(identity)
+	}
+	return owners, nil
+}
+
+// SyncBucket implements engine.BucketEngine using the SeaweedFS operator's
+// native Bucket CR.
+func (e *Engine) SyncBucket(ctx context.Context, target engine.Target, bucket engine.DesiredBucket) error {
+	seaweed, err := e.dyn.Resource(seaweedResource).Namespace(target.Namespace).Get(
+		ctx, target.Instance, metav1.GetOptions{},
+	)
+	if apierrors.IsNotFound(err) {
+		return fmt.Errorf("%w: Seaweed cluster is not found", engine.ErrNotReady)
+	}
+	if err != nil {
+		return fmt.Errorf("get Seaweed cluster: %w", err)
+	}
+	desired := bucketObject(target, seaweed, bucket)
+	resource := e.dyn.Resource(bucketResource).Namespace(target.Namespace)
+	existing, err := resource.Get(ctx, desired.GetName(), metav1.GetOptions{})
+	switch {
+	case err == nil:
+		if !isManaged(existing) || existing.GetLabels()[instanceLabel] != target.Instance {
+			return fmt.Errorf("Bucket %q exists and is not managed by the plugin", desired.GetName())
+		}
+		desiredSpec, _, _ := unstructured.NestedMap(desired.Object, "spec")
+		existingSpec, _, _ := unstructured.NestedMap(existing.Object, "spec")
+		if reflect.DeepEqual(existingSpec, desiredSpec) {
+			if problem := readyProblem(existing); problem != "" {
+				if bucketAlreadyExists(existing) {
+					return fmt.Errorf("%w: %s", engine.ErrInvalid, problem)
+				}
+				return fmt.Errorf("%w: %s", engine.ErrInProgress, problem)
+			}
+			return nil
+		}
+	case apierrors.IsNotFound(err):
+	case err != nil:
+		return fmt.Errorf("get Bucket %q: %w", desired.GetName(), err)
+	}
+	applied, err := e.apply(ctx, bucketResource, desired)
+	if err != nil {
+		return err
+	}
+	if problem := readyProblem(applied); problem != "" {
+		if bucketAlreadyExists(applied) {
+			return fmt.Errorf("%w: %s", engine.ErrInvalid, problem)
+		}
+		return fmt.Errorf("%w: %s", engine.ErrInProgress, problem)
+	}
+	return nil
+}
+
+// ReleaseBucket removes the native Bucket CR, retaining or deleting the
+// underlying S3 bucket according to drop.
+func (e *Engine) ReleaseBucket(ctx context.Context, target engine.Target, name string, drop bool) error {
+	resource := e.dyn.Resource(bucketResource).Namespace(target.Namespace)
+	resourceName := bucketName(target, name)
+	obj, err := resource.Get(ctx, resourceName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get Bucket %q: %w", resourceName, err)
+	}
+	if !isManaged(obj) || obj.GetLabels()[instanceLabel] != target.Instance {
+		return fmt.Errorf("Bucket %q is not managed by the plugin", resourceName)
+	}
+	policy := "Retain"
+	if drop {
+		policy = "Delete"
+	}
+	current, _, _ := unstructured.NestedString(obj.Object, "spec", "reclaimPolicy")
+	if current != policy && obj.GetDeletionTimestamp() == nil {
+		obj = obj.DeepCopy()
+		if err := unstructured.SetNestedField(obj.Object, policy, "spec", "reclaimPolicy"); err != nil {
+			return err
+		}
+		obj, err = resource.Update(ctx, obj, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("set Bucket reclaim policy: %w", err)
+		}
+	}
+	if obj.GetDeletionTimestamp() == nil {
+		if err := resource.Delete(ctx, resourceName, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("delete Bucket %q: %w", resourceName, err)
+		}
+	}
+	return fmt.Errorf("%w: SeaweedFS is releasing bucket %q", engine.ErrInProgress, name)
+}
+
 func (e *Engine) bucketGrants(ctx context.Context, target engine.Target) (map[string][]engine.RoleGrant, error) {
 	bindings, err := e.dyn.Resource(bindingResource).Namespace(target.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: managedByLabel + "=" + managedBy,
@@ -303,12 +462,29 @@ func (e *Engine) bucketGrants(ctx context.Context, target engine.Target) (map[st
 
 func (e *Engine) DropUser(ctx context.Context, target engine.Target, username string) error {
 	name := identityName(target, username)
+	buckets, err := e.dyn.Resource(bucketResource).Namespace(metav1.NamespaceAll).List(
+		ctx, metav1.ListOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("list buckets before dropping S3 user: %w", err)
+	}
+	for i := range buckets.Items {
+		bucket := &buckets.Items[i]
+		if !matchingBucket(bucket, target) {
+			continue
+		}
+		owner, _, _ := unstructured.NestedString(bucket.Object, "spec", "owner")
+		if owner == name {
+			return fmt.Errorf("%w: bucket %q is still owned by user %q", engine.ErrInProgress, matchingBucketName(bucket), username)
+		}
+	}
 	resource := e.dyn.Resource(identityResource).Namespace(target.Namespace)
 	identity, err := resource.Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		e.problems.Delete(problemKey(target, username))
 		return nil
 	}
+
 	if err != nil {
 		return fmt.Errorf("get S3Identity %q: %w", name, err)
 	}
@@ -321,6 +497,14 @@ func (e *Engine) DropUser(ctx context.Context, target engine.Target, username st
 		}
 	}
 	return fmt.Errorf("%w: SeaweedFS is deleting IAM user %q", engine.ErrInProgress, username)
+}
+
+func matchingBucketName(bucket *unstructured.Unstructured) string {
+	name, _, _ := unstructured.NestedString(bucket.Object, "spec", "name")
+	if name == "" {
+		return bucket.GetName()
+	}
+	return name
 }
 
 func (e *Engine) ConnectionURI(ctx context.Context, target engine.Target, _, _ string) (string, error) {

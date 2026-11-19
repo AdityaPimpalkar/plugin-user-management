@@ -96,11 +96,12 @@ func fakeEverest(t *testing.T, provider string, instanceStatus, connectionStatus
 }
 
 type testEnv struct {
-	t        *testing.T
-	kube     client.Client
-	engine   *fakeEngine
-	dbEngine *fakeDBEngine
-	h        http.Handler
+	t            *testing.T
+	kube         client.Client
+	engine       *fakeEngine
+	dbEngine     *fakeDBEngine
+	bucketEngine *fakeBucketEngine
+	h            http.Handler
 }
 
 func newTestEnv(t *testing.T, provider string, instanceStatus, connectionStatus int, objs ...client.Object) *testEnv {
@@ -118,6 +119,9 @@ func newTestEnv(t *testing.T, provider string, instanceStatus, connectionStatus 
 		WithIndex(&v1alpha1.InstanceDatabase{}, controller.InstanceIndex, func(obj client.Object) []string {
 			return []string{obj.(*v1alpha1.InstanceDatabase).Spec.InstanceRef.Name}
 		}).
+		WithIndex(&v1alpha1.InstanceBucket{}, controller.InstanceIndex, func(obj client.Object) []string {
+			return []string{obj.(*v1alpha1.InstanceBucket).Spec.InstanceRef.Name}
+		}).
 		Build()
 	eng := &fakeEngine{}
 	dbEng := &fakeDBEngine{fakeEngine: eng}
@@ -126,7 +130,7 @@ func newTestEnv(t *testing.T, provider string, instanceStatus, connectionStatus 
 	case keyProvider:
 		registered = &fakeKeyEngine{eng}
 	case s3Provider:
-		registered = &fakeS3Engine{eng}
+		registered = &fakeBucketEngine{fakeS3Engine: &fakeS3Engine{eng}}
 	}
 	s := &server{
 		everest: newEverestClient(fakeEverest(t, provider, instanceStatus, connectionStatus).URL),
@@ -138,7 +142,11 @@ func newTestEnv(t *testing.T, provider string, instanceStatus, connectionStatus 
 			s3Provider:               registered,
 		},
 	}
-	return &testEnv{t: t, kube: kube, engine: eng, dbEngine: dbEng, h: newMux(s)}
+	env := &testEnv{t: t, kube: kube, engine: eng, dbEngine: dbEng, h: newMux(s)}
+	if bucketEng, ok := registered.(*fakeBucketEngine); ok {
+		env.bucketEngine = bucketEng
+	}
+	return env
 }
 
 const keyProvider = "provider-kserve"
@@ -183,6 +191,22 @@ func (f *fakeS3Engine) PrepareCredentialSecret(
 
 func (f *fakeS3Engine) ConnectionProperties(context.Context, engine.Target) (map[string]string, error) {
 	return map[string]string{"endpointURL": "https://s3.ns.svc:8334", "region": "us-east-1"}, nil
+}
+
+type fakeBucketEngine struct {
+	*fakeS3Engine
+	buckets []engine.Bucket
+}
+
+func (f *fakeBucketEngine) ValidateBucket(string) error { return nil }
+func (f *fakeBucketEngine) ListBuckets(context.Context, engine.Target) ([]engine.Bucket, error) {
+	return f.buckets, nil
+}
+func (f *fakeBucketEngine) SyncBucket(context.Context, engine.Target, engine.DesiredBucket) error {
+	return nil
+}
+func (f *fakeBucketEngine) ReleaseBucket(context.Context, engine.Target, string, bool) error {
+	return nil
 }
 
 func (e *testEnv) do(method, target, body string) *httptest.ResponseRecorder {

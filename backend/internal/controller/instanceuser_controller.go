@@ -237,7 +237,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		if waiting != "" {
 			s.declarable = declarable
-			s.waiting = fmt.Sprintf("waiting for the InstanceDatabase of database %q", waiting)
+			s.waiting = waiting
 		}
 	}
 
@@ -256,20 +256,42 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return withResync(result, eng, len(states) > 0), nil
 }
 
-// declarableRoles leaves out the roles granted on databases whose
-// InstanceDatabase isn't available, for engines that manage databases:
-// their database-scoped roles only exist once an InstanceDatabase has been
-// applied, and until it's deleted. It returns the first such database, or ""
-// when all roles can be declared. Declaring the rest right away applies
-// revocations without waiting.
+// declarableRoles leaves out roles on a managed resource that is not available
+// yet. Out-of-band buckets are allowed when no matching InstanceBucket exists.
 func (r *Reconciler) declarableRoles(ctx context.Context, eng engine.Engine, instance ctrl.Request, roles []engine.RoleGrant) ([]engine.RoleGrant, string, error) {
-	if _, ok := eng.(engine.DatabaseEngine); !ok {
+	_, databasesSupported := eng.(engine.DatabaseEngine)
+	_, bucketsSupported := eng.(engine.BucketEngine)
+	if !databasesSupported && !bucketsSupported {
 		return roles, "", nil
 	}
 	var ready map[string]bool
+	var buckets map[string]*v1alpha1.InstanceBucket
 	declarable := make([]engine.RoleGrant, 0, len(roles))
 	waiting := ""
 	for _, g := range roles {
+		if g.Bucket != "" && bucketsSupported {
+			if buckets == nil {
+				var list v1alpha1.InstanceBucketList
+				if err := r.Client.List(ctx, &list, client.InNamespace(instance.Namespace), client.MatchingFields{InstanceIndex: instance.Name}); err != nil {
+					return nil, "", err
+				}
+				buckets = map[string]*v1alpha1.InstanceBucket{}
+				for i := range list.Items {
+					buckets[list.Items[i].Spec.Name] = &list.Items[i]
+				}
+			}
+			bucket := buckets[g.Bucket]
+			if bucket == nil || bucket.Status.Available {
+				declarable = append(declarable, g)
+			} else if waiting == "" {
+				waiting = fmt.Sprintf("waiting for the InstanceBucket of bucket %q", g.Bucket)
+			}
+			continue
+		}
+		if g.Database != "" && !databasesSupported {
+			declarable = append(declarable, g)
+			continue
+		}
 		if g.Database == "" {
 			declarable = append(declarable, g)
 			continue
@@ -289,7 +311,7 @@ func (r *Reconciler) declarableRoles(ctx context.Context, eng engine.Engine, ins
 		if ready[g.Database] {
 			declarable = append(declarable, g)
 		} else if waiting == "" {
-			waiting = g.Database
+			waiting = fmt.Sprintf("waiting for the InstanceDatabase of database %q", g.Database)
 		}
 	}
 	return declarable, waiting, nil

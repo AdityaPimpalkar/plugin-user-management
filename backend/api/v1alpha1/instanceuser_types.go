@@ -32,6 +32,12 @@ type InstanceReference struct {
 	Name string `json:"name"`
 }
 
+// InstanceUserReference names an InstanceUser in the referencing object's namespace.
+type InstanceUserReference struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
 // SecretKeySelector selects a key of a Secret in the InstanceUser's namespace.
 type SecretKeySelector struct {
 	// +kubebuilder:validation:MinLength=1

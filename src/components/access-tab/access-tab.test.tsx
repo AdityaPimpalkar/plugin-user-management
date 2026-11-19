@@ -8,12 +8,14 @@ import { Messages } from './access-tab.messages';
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
-// A plugin API whose backend reports whether the engine manages databases.
-const fakeApi = (databasesSupported: boolean) =>
+// A plugin API whose backend reports which scoped resources the engine manages.
+const fakeApi = (databasesSupported: boolean, bucketsSupported = false) =>
   ({
     fetch: async (path: string) =>
       path.startsWith('/api/databases')
         ? json({ databases: [], supported: true, canManage: true })
+        : path.startsWith('/api/buckets')
+          ? json({ buckets: [], supported: true, canManage: true })
         : json({
             users: [],
             roles: [],
@@ -21,12 +23,13 @@ const fakeApi = (databasesSupported: boolean) =>
             credentialKind: 'password',
             rolesRequired: !databasesSupported,
             databasesSupported,
+            bucketsSupported,
           }),
   }) as unknown as PluginApi;
 
-const renderTab = (databasesSupported: boolean) =>
+const renderTab = (databasesSupported: boolean, bucketsSupported = false) =>
   render(
-    <PluginApiContext.Provider value={fakeApi(databasesSupported)}>
+    <PluginApiContext.Provider value={fakeApi(databasesSupported, bucketsSupported)}>
       <QueryClientProvider client={new QueryClient()}>
         <AccessTab namespace="ns" instanceName="pg" />
       </QueryClientProvider>
@@ -50,5 +53,14 @@ describe('AccessTab', () => {
     renderTab(false);
     expect(await screen.findByText('Database users')).toBeTruthy();
     expect(screen.queryByRole('tablist')).toBeNull();
+  });
+
+  it('shows users and buckets as sections where buckets are managed', async () => {
+    renderTab(false, true);
+    const tabs = await screen.findByRole('tablist', { name: Messages.sectionsLabel });
+    expect(tabs.textContent).toBe('UsersBuckets');
+
+    fireEvent.click(screen.getByRole('tab', { name: Messages.sections.buckets }));
+    expect(await screen.findByRole('button', { name: 'Create bucket' })).toBeTruthy();
   });
 });

@@ -20,6 +20,8 @@ interface UsersDialogsProps {
   rolesRequired?: boolean;
   // The databases database-scoped roles can be granted on, when managed.
   databases?: string[];
+  // The buckets bucket-scoped roles can be granted on.
+  buckets?: string[];
   dialog: UsersDialogState;
   onClose: () => void;
 }
@@ -34,6 +36,7 @@ export const UsersDialogs = ({
   roles,
   rolesRequired,
   databases,
+  buckets,
   dialog,
   onClose,
 }: UsersDialogsProps) => {
@@ -67,6 +70,7 @@ export const UsersDialogs = ({
           roles={roles}
           rolesRequired={rolesRequired}
           databases={databases}
+          buckets={buckets}
           isSubmitting={createUser.isPending}
           error={createUser.error?.message}
           onClose={close}
@@ -87,6 +91,7 @@ export const UsersDialogs = ({
           roles={roles}
           rolesRequired={rolesRequired}
           databases={databases}
+          buckets={buckets}
           username={dialog.user.username}
           initialRoles={dialog.user.roles}
           isSubmitting={updateRoles.isPending}

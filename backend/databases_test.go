@@ -234,6 +234,7 @@ func TestUsersResponseCapabilities(t *testing.T) {
 	for provider, want := range map[string]string{
 		dbProvider:               `"rolesRequired":false,"databasesSupported":true`,
 		"percona-server-mongodb": `"rolesRequired":true,"databasesSupported":false`,
+		s3Provider:               `"databasesSupported":false,"bucketsSupported":true`,
 	} {
 		rec := newTestEnv(t, provider, http.StatusOK, http.StatusOK).do("GET", "/api/users"+testQuery, "")
 		if !strings.Contains(rec.Body.String(), want) {

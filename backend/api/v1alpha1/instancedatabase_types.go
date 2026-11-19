@@ -20,12 +20,6 @@ const (
 	ConnectGranted = "Granted"
 )
 
-// InstanceUserReference names an InstanceUser in the InstanceDatabase's namespace.
-type InstanceUserReference struct {
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-}
-
 // DatabaseOwner is the user who owns a database.
 type DatabaseOwner struct {
 	// InstanceUserRef is an InstanceUser of the same instance; the database

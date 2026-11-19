@@ -87,10 +87,10 @@ native operator resources in the Instance namespace:
 - `S3Identity` for the IAM user;
 - `S3Credentials` for one access key / secret access key pair;
 - `S3Policy` and `S3PolicyBinding` for each bucket grant.
+- `Bucket` for each `InstanceBucket` created from the Access tab.
 
-`read`, `readWrite` and `admin` are bucket-scoped roles. They cover one existing
-S3 bucket and generate AWS-style IAM policies; the plugin does not create
-buckets in this experimental slice. A grant looks like this:
+`read`, `readWrite` and `admin` are bucket-scoped roles. They cover one S3
+bucket and generate AWS-style IAM policies. A grant looks like this:
 
 ```yaml
 roles:
@@ -101,6 +101,12 @@ roles:
 The requested InstanceUser name is kept as the identity's display name. The
 actual SeaweedFS IAM name is an internal namespaced value, so an ordinary IAM
 user with the same application-facing name is not accidentally adopted.
+
+Buckets are declared independently as `InstanceBucket` resources and managed
+from the **Buckets** section. They may have an optional managed owner. Deleting
+an `InstanceBucket` defaults to `Retain`, which removes OpenEverest management
+but keeps the bucket and its objects; the UI can explicitly request `Delete`.
+A bucket owner can't be deleted until its buckets are reassigned or removed.
 
 Generated credentials keep the existing `username` and `password` keys and add
 `AWS_ACCESS_KEY_ID`. `password` is the S3 secret access key. The same Secret

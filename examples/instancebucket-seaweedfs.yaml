@@ -1,0 +1,13 @@
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceBucket
+metadata:
+  name: uploads
+  namespace: team-a
+spec:
+  instanceRef:
+    name: object-store
+  name: uploads
+  owner:
+    instanceUserRef:
+      name: uploads-uploader
+  deletionPolicy: Retain

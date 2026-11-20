@@ -11,6 +11,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import { useUsers } from 'hooks/useUsers';
 import { useDatabases } from 'hooks/useDatabases';
+import { useBuckets } from 'hooks/useBuckets';
 import { grantableDatabases } from 'components/databases-tab/databases-tab.utils';
 import { TermsContext, termsFor } from 'components/terms-context/terms.context';
 import { UsersDialogs } from './users-dialogs/users-dialogs';
@@ -28,6 +29,7 @@ export const UsersTab = ({ namespace, instanceName }: UsersTabProps) => {
   const [dialog, setDialog] = useState<UsersDialogState>(null);
   const { data, isLoading, error } = useUsers(target);
   const databases = useDatabases(target, !!data?.databasesSupported);
+  const buckets = useBuckets(target, !!data?.bucketsSupported);
 
   if (isLoading) {
     return (
@@ -44,7 +46,16 @@ export const UsersTab = ({ namespace, instanceName }: UsersTabProps) => {
     );
   }
 
-  const { users, roles, canManage, databaseError, credentialKind, rolesRequired, databasesSupported } = data;
+  const {
+    users,
+    roles,
+    canManage,
+    databaseError,
+    credentialKind,
+    rolesRequired,
+    databasesSupported,
+    bucketsSupported,
+  } = data;
   const terms = termsFor(credentialKind);
   return (
     <TermsContext.Provider value={terms}>
@@ -82,6 +93,7 @@ export const UsersTab = ({ namespace, instanceName }: UsersTabProps) => {
           roles={roles}
           rolesRequired={rolesRequired !== false}
           databases={databasesSupported ? grantableDatabases(databases.data?.databases ?? []) : undefined}
+          buckets={bucketsSupported ? (buckets.data?.buckets ?? []).map((bucket) => bucket.name) : undefined}
           dialog={dialog}
           onClose={() => setDialog(null)}
         />

@@ -207,6 +207,29 @@ type DesiredDatabase struct {
 	PostgreSQL *PostgreSQLDatabase
 }
 
+// Bucket is an object-storage bucket as it exists in an instance.
+type Bucket struct {
+	Name  string
+	Owner string
+	// System buckets are created or declared by the operator or provider.
+	System bool
+}
+
+// DesiredBucket is a bucket the plugin manages.
+type DesiredBucket struct {
+	Name string
+	// Owner is the visible username of the owner's InstanceUser.
+	Owner string
+}
+
+// BucketEngine is implemented by engines that manage buckets of an instance.
+type BucketEngine interface {
+	ValidateBucket(name string) error
+	ListBuckets(ctx context.Context, target Target) ([]Bucket, error)
+	SyncBucket(ctx context.Context, target Target, bucket DesiredBucket) error
+	ReleaseBucket(ctx context.Context, target Target, name string, drop bool) error
+}
+
 // PostgreSQLDatabase are the PostgreSQL-only options of a database.
 type PostgreSQLDatabase struct {
 	// Extensions to have in the database.

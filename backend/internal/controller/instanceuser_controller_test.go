@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,9 +134,30 @@ func newHarness(t *testing.T, objs ...client.Object) *harness {
 		WithIndex(&v1alpha1.InstanceUser{}, InstanceIndex, func(obj client.Object) []string {
 			return []string{obj.(*v1alpha1.InstanceUser).Spec.InstanceRef.Name}
 		}).
+		WithIndex(&v1alpha1.InstanceBucket{}, InstanceIndex, func(obj client.Object) []string {
+			return []string{obj.(*v1alpha1.InstanceBucket).Spec.InstanceRef.Name}
+		}).
 		Build()
 	eng := &fakeEngine{}
 	return &harness{t: t, client: c, engine: eng, r: &Reconciler{Client: c, Engines: map[string]engine.Engine{"percona-server-mongodb": eng}}}
+}
+
+func TestUserWaitsForManagedBucket(t *testing.T) {
+	bucket := instanceBucket("uploads", "uploads", "")
+	user := dbUser("app", "app", v1alpha1.RoleGrant{Role: "readWrite", Bucket: "uploads"})
+	h := newHarness(t, instance("provider-seaweedfs"), bucket, user)
+	eng := &fakeBucketEngine{}
+	h.r.Engines["provider-seaweedfs"] = eng
+
+	h.reconcile()
+	state := h.get("app")
+	if state.Status.Phase != v1alpha1.PhasePending ||
+		!strings.Contains(state.Status.Message, "InstanceBucket") {
+		t.Fatalf("status = %+v", state.Status)
+	}
+	if len(eng.fakeEngine.synced) == 0 || len(eng.fakeEngine.synced[0][0].Roles) != 0 {
+		t.Fatalf("synced before bucket available: %+v", eng.fakeEngine.synced)
+	}
 }
 
 func (h *harness) reconcile() ctrl.Result {

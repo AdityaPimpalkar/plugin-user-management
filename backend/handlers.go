@@ -83,6 +83,9 @@ type usersResponse struct {
 	// DatabasesSupported tells whether the instance's databases are managed
 	// too, so database-scoped roles are granted on them.
 	DatabasesSupported bool `json:"databasesSupported"`
+	// BucketsSupported tells whether bucket-scoped roles target buckets managed
+	// through the plugin.
+	BucketsSupported bool `json:"bucketsSupported"`
 }
 
 type credentialsResponse struct {
@@ -303,6 +306,7 @@ func (s *server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	_, noRolesErr := a.engine.NormalizeRoles(nil)
 	resp.RolesRequired = noRolesErr != nil
 	_, resp.DatabasesSupported = a.engine.(engine.DatabaseEngine)
+	_, resp.BucketsSupported = a.engine.(engine.BucketEngine)
 	managed := map[string]bool{}
 	for i := range declared {
 		resp.Users = append(resp.Users, managedView(a.engine, &declared[i]))

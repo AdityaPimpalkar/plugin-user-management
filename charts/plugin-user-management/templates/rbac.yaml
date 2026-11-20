@@ -16,13 +16,13 @@ metadata:
 rules:
   # The plugin's own API: declared users and databases, reconciled by the backend.
   - apiGroups: ["plugin-user-management.plugins.openeverest.io"]
-    resources: ["instanceusers", "instancedatabases"]
+    resources: ["instanceusers", "instancedatabases", "instancebuckets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["plugin-user-management.plugins.openeverest.io"]
-    resources: ["instanceusers/status", "instancedatabases/status"]
+    resources: ["instanceusers/status", "instancedatabases/status", "instancebuckets/status"]
     verbs: ["get", "update", "patch"]
   - apiGroups: ["plugin-user-management.plugins.openeverest.io"]
-    resources: ["instanceusers/finalizers", "instancedatabases/finalizers"]
+    resources: ["instanceusers/finalizers", "instancedatabases/finalizers", "instancebuckets/finalizers"]
     verbs: ["update"]
   # Generated passwords, the operator's user admin credentials and TLS CA.
   # list/watch feed an informer restricted to the plugin's own credentials
@@ -86,7 +86,7 @@ rules:
     resources: ["seaweeds"]
     verbs: ["get"]
   - apiGroups: ["seaweed.seaweedfs.com"]
-    resources: ["s3identities", "s3credentials", "s3policies", "s3policybindings"]
+    resources: ["s3identities", "s3credentials", "s3policies", "s3policybindings", "buckets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

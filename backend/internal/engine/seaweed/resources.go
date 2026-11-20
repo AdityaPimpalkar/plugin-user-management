@@ -39,6 +39,7 @@ var (
 		Group: "seaweed.seaweedfs.com", Version: "v1", Resource: "s3credentials",
 	}
 	policyResource  = schema.GroupVersionResource{Group: "seaweed.seaweedfs.com", Version: "v1", Resource: "s3policies"}
+	bucketResource  = schema.GroupVersionResource{Group: "seaweed.seaweedfs.com", Version: "v1", Resource: "buckets"}
 	bindingResource = schema.GroupVersionResource{
 		Group: "seaweed.seaweedfs.com", Version: "v1", Resource: "s3policybindings",
 	}
@@ -52,6 +53,10 @@ func identityName(target engine.Target, username string) string {
 
 func credentialsName(target engine.Target, username string) string {
 	return resourceName(maxResourceNameLength, target.Instance, "s3-user", username, "credentials")
+}
+
+func bucketName(target engine.Target, name string) string {
+	return resourceName(maxResourceNameLength, target.Instance, "bucket", name)
 }
 
 func policyName(target engine.Target, username string, grant engine.RoleGrant) string {
@@ -208,6 +213,40 @@ func bindingObject(
 	}}
 }
 
+func bucketObject(
+	target engine.Target,
+	seaweed *unstructured.Unstructured,
+	bucket engine.DesiredBucket,
+) *unstructured.Unstructured {
+	owner := ""
+	if bucket.Owner != "" {
+		owner = identityName(target, bucket.Owner)
+	}
+	spec := map[string]any{
+		"clusterRef":    map[string]any{"name": target.Instance},
+		"name":          bucket.Name,
+		"reclaimPolicy": "Retain",
+	}
+	if owner != "" {
+		spec["owner"] = owner
+	}
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": bucketResource.GroupVersion().String(),
+		"kind":       "Bucket",
+		"metadata": map[string]any{
+			"name":      bucketName(target, bucket.Name),
+			"namespace": target.Namespace,
+			"labels": map[string]any{
+				managedByLabel: managedBy,
+				instanceLabel:  target.Instance,
+			},
+			"annotations":     map[string]any{usernameAnnotation: bucket.Owner},
+			"ownerReferences": []any{ownerReference(seaweed)},
+		},
+		"spec": spec,
+	}}
+}
+
 func identityUsername(identity *unstructured.Unstructured) string {
 	if isManaged(identity) {
 		if username := identity.GetAnnotations()[usernameAnnotation]; username != "" {
@@ -253,6 +292,32 @@ func readyProblem(obj *unstructured.Unstructured) string {
 func matchingIdentity(obj *unstructured.Unstructured, target engine.Target) bool {
 	name, _, _ := unstructured.NestedString(obj.Object, "spec", "seaweedRef", "name")
 	return name == target.Instance
+}
+
+func matchingBucket(obj *unstructured.Unstructured, target engine.Target) bool {
+	name, _, _ := unstructured.NestedString(obj.Object, "spec", "seaweedRef", "name")
+	namespace, _, _ := unstructured.NestedString(obj.Object, "spec", "seaweedRef", "namespace")
+	if name == "" {
+		name, _, _ = unstructured.NestedString(obj.Object, "spec", "clusterRef", "name")
+		namespace, _, _ = unstructured.NestedString(obj.Object, "spec", "clusterRef", "namespace")
+	}
+	if namespace == "" {
+		namespace = obj.GetNamespace()
+	}
+	return name == target.Instance && namespace == target.Namespace
+}
+
+func bucketAlreadyExists(obj *unstructured.Unstructured) bool {
+	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	for _, raw := range conditions {
+		condition, ok := raw.(map[string]any)
+		if ok &&
+			condition["type"] == "BucketAlreadyExists" &&
+			condition["status"] == "True" {
+			return true
+		}
+	}
+	return false
 }
 
 func isManaged(obj metav1.Object) bool {

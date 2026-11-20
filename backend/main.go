@@ -111,6 +111,10 @@ func newMux(s *server) *http.ServeMux {
 	mux.HandleFunc("POST /api/databases", s.handleCreateDatabase)
 	mux.HandleFunc("PUT /api/databases/{id}", s.handleUpdateDatabase)
 	mux.HandleFunc("DELETE /api/databases/{id}", s.handleDeleteDatabase)
+	mux.HandleFunc("GET /api/buckets", s.handleListBuckets)
+	mux.HandleFunc("POST /api/buckets", s.handleCreateBucket)
+	mux.HandleFunc("PUT /api/buckets/{id}", s.handleUpdateBucket)
+	mux.HandleFunc("DELETE /api/buckets/{id}", s.handleDeleteBucket)
 	return mux
 }
 
@@ -221,6 +225,9 @@ func main() {
 	if err := controller.IndexDatabaseInstance(ctx, mgr); err != nil {
 		log.Fatalf("index InstanceDatabases: %v", err)
 	}
+	if err := controller.IndexBucketInstance(ctx, mgr); err != nil {
+		log.Fatalf("index InstanceBuckets: %v", err)
+	}
 	workers := envInt("MAX_CONCURRENT_RECONCILES", 4)
 	if err := (&controller.Reconciler{
 		Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Engines: engines, MaxConcurrentReconciles: workers,
@@ -231,6 +238,11 @@ func main() {
 		Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Engines: engines, MaxConcurrentReconciles: workers,
 	}).SetupWithManager(mgr); err != nil {
 		log.Fatalf("set up database controller: %v", err)
+	}
+	if err := (&controller.BucketReconciler{
+		Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Engines: engines, MaxConcurrentReconciles: workers,
+	}).SetupWithManager(mgr); err != nil {
+		log.Fatalf("set up bucket controller: %v", err)
 	}
 
 	s := &server{

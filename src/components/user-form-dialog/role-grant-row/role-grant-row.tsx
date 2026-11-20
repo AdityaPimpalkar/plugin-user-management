@@ -18,6 +18,8 @@ interface RoleGrantRowProps {
   // The databases roles can be granted on, when the instance's databases are
   // managed; the database is typed in otherwise.
   databases?: string[];
+  // Buckets roles can be granted on; undefined keeps a free-text field.
+  buckets?: string[];
   onChange: (value: RoleGrantDraft) => void;
   onRemove: () => void;
 }
@@ -31,6 +33,7 @@ export const RoleGrantRow = ({
   showDatabase,
   showBucket,
   databases,
+  buckets,
   onChange,
   onRemove,
 }: RoleGrantRowProps) => {
@@ -41,6 +44,10 @@ export const RoleGrantRow = ({
     databases && value.database && !databases.includes(value.database)
       ? [...databases, value.database]
       : databases;
+  const bucketOptions =
+    buckets && value.bucket && !buckets.includes(value.bucket)
+      ? [...buckets, value.bucket]
+      : buckets;
   return (
     <Stack direction="row" sx={{ gap: 1, alignItems: 'flex-start' }}>
       <TextField
@@ -93,7 +100,25 @@ export const RoleGrantRow = ({
           sx={{ flex: 1 }}
         />
       )}
-      {showBucket && (
+      {showBucket && bucketOptions && isBucketScoped && (
+        <TextField
+          select
+          size="small"
+          label={Messages.bucket}
+          value={value.bucket}
+          onChange={(e) => onChange({ ...value, bucket: e.target.value })}
+          error={showErrors && !!errors.bucket}
+          helperText={showErrors ? errors.bucket : undefined}
+          sx={{ flex: 1 }}
+        >
+          {bucketOptions.map((name) => (
+            <MenuItem key={name} value={name}>
+              {name}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
+      {showBucket && (!bucketOptions || !isBucketScoped) && (
         <TextField
           size="small"
           label={Messages.bucket}

@@ -43,6 +43,8 @@ export interface UsersResponse {
   rolesRequired?: boolean;
   // True when database-scoped roles are granted on the instance's managed databases.
   databasesSupported?: boolean;
+  // True when bucket-scoped roles are granted on buckets listed by the engine.
+  bucketsSupported?: boolean;
 }
 
 export interface Credentials {

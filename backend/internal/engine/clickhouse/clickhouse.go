@@ -25,8 +25,12 @@ import (
 	"github.com/openeverest/plugin-user-management/backend/internal/engine"
 )
 
-// ProviderName is the provider (Instance spec.providerRef.name) this engine serves.
-const ProviderName = "provider-altinity-clickhouse"
+const (
+	// ProviderName is the canonical provider name from definition/provider.yaml.
+	ProviderName = "provider-altinity-clickhouse"
+	// ChartProviderName is the default metadata.name used by the provider chart.
+	ChartProviderName = "altinity-clickhouse"
+)
 
 const resyncInterval = 5 * time.Minute
 

@@ -20,7 +20,7 @@ Supported providers:
 | `percona-server-mongodb` | Percona Server for MongoDB, through the operator's `spec.users` |
 | `provider-cloudnative-pg` | CloudNativePG 1.30+, through the operator's `DatabaseRole` resource |
 | `provider-percona-postgresql` | Percona Operator for PostgreSQL, through SQL as the operator's `postgres` superuser |
-| `provider-altinity-clickhouse` | ClickHouse 24.8+, through SQL as the provider's administrative user |
+| `provider-altinity-clickhouse` (`altinity-clickhouse` chart name) | ClickHouse 24.8+, through SQL as the provider's administrative user |
 | `provider-kserve` | API keys for models on the Envoy AI Gateway, through the provider's key Secrets |
 | `provider-seaweedfs` | S3 identities, access keys and bucket-scoped IAM policies |
 | `mssql` | Microsoft SQL Server (Solanica MSSQL operator), through T-SQL as `sa` |

@@ -199,16 +199,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("kubernetes dynamic client: %v", err)
 	}
+	clickHouse := clickhouse.New(kube, dyn)
 	engines := map[string]engine.Engine{
-		mongodb.ProviderName:    mongodb.New(kube, dyn),
-		cnpg.ProviderName:       cnpg.New(kube, dyn, extensionPolicy()),
-		perconapg.ProviderName:  perconapg.New(kube, dyn, extensionPolicy()),
-		kserve.ProviderName:     kserve.New(kube, dyn),
-		mssql.ProviderName:      mssql.New(kube, dyn),
-		mariadb.ProviderName:    mariadb.New(kube, dyn),
-		valkey.ProviderName:     valkey.New(kube, dyn),
-		seaweed.ProviderName:    seaweed.New(kube, dyn),
-		clickhouse.ProviderName: clickhouse.New(kube, dyn),
+		mongodb.ProviderName:         mongodb.New(kube, dyn),
+		cnpg.ProviderName:            cnpg.New(kube, dyn, extensionPolicy()),
+		perconapg.ProviderName:       perconapg.New(kube, dyn, extensionPolicy()),
+		kserve.ProviderName:          kserve.New(kube, dyn),
+		mssql.ProviderName:           mssql.New(kube, dyn),
+		mariadb.ProviderName:         mariadb.New(kube, dyn),
+		valkey.ProviderName:          valkey.New(kube, dyn),
+		seaweed.ProviderName:         seaweed.New(kube, dyn),
+		clickhouse.ProviderName:      clickHouse,
+		clickhouse.ChartProviderName: clickHouse,
 	}
 
 	mgr, err := newManager(cfg)

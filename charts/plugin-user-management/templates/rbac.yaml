@@ -56,6 +56,12 @@ rules:
   - apiGroups: ["pgv2.percona.com"]
     resources: ["perconapgclusters"]
     verbs: ["get"]
+  # ClickHouse: users and databases are managed with SQL. The installation
+  # gives the endpoint, readiness and TLS mode; its provider credentials and
+  # issued CA are read from their Secrets above.
+  - apiGroups: ["clickhouse.altinity.com"]
+    resources: ["clickhouseinstallations"]
+    verbs: ["get"]
   # MSSQL: logins and databases are managed in T-SQL as sa (Secret
   # everest-secrets-<instance>). The MSSQLAvailabilityGroup or MSSQLInstance
   # gives the endpoint, TLS Secret and readiness.

@@ -35,6 +35,7 @@ import (
 	"github.com/openeverest/plugin-user-management/backend/api/v1alpha1"
 	"github.com/openeverest/plugin-user-management/backend/internal/controller"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine"
+	"github.com/openeverest/plugin-user-management/backend/internal/engine/clickhouse"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/cnpg"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/kserve"
 	"github.com/openeverest/plugin-user-management/backend/internal/engine/mariadb"
@@ -199,14 +200,15 @@ func main() {
 		log.Fatalf("kubernetes dynamic client: %v", err)
 	}
 	engines := map[string]engine.Engine{
-		mongodb.ProviderName:   mongodb.New(kube, dyn),
-		cnpg.ProviderName:      cnpg.New(kube, dyn, extensionPolicy()),
-		perconapg.ProviderName: perconapg.New(kube, dyn, extensionPolicy()),
-		kserve.ProviderName:    kserve.New(kube, dyn),
-		mssql.ProviderName:     mssql.New(kube, dyn),
-		mariadb.ProviderName:   mariadb.New(kube, dyn),
-		valkey.ProviderName:    valkey.New(kube, dyn),
-		seaweed.ProviderName:   seaweed.New(kube, dyn),
+		mongodb.ProviderName:    mongodb.New(kube, dyn),
+		cnpg.ProviderName:       cnpg.New(kube, dyn, extensionPolicy()),
+		perconapg.ProviderName:  perconapg.New(kube, dyn, extensionPolicy()),
+		kserve.ProviderName:     kserve.New(kube, dyn),
+		mssql.ProviderName:      mssql.New(kube, dyn),
+		mariadb.ProviderName:    mariadb.New(kube, dyn),
+		valkey.ProviderName:     valkey.New(kube, dyn),
+		seaweed.ProviderName:    seaweed.New(kube, dyn),
+		clickhouse.ProviderName: clickhouse.New(kube, dyn),
 	}
 
 	mgr, err := newManager(cfg)

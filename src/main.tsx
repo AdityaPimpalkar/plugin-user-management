@@ -11,6 +11,7 @@ const SUPPORTED_PROVIDERS = [
   'percona-server-mongodb',
   'provider-cloudnative-pg',
   'provider-percona-postgresql',
+  'provider-altinity-clickhouse',
   'provider-kserve',
   'mssql',
   'mariadb',

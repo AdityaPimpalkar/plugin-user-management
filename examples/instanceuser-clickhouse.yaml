@@ -1,0 +1,12 @@
+apiVersion: plugin-user-management.plugins.openeverest.io/v1alpha1
+kind: InstanceUser
+metadata:
+  name: events-app
+spec:
+  instanceRef:
+    name: events
+  username: events_app
+  roles:
+    - role: readWrite
+      database: events
+    - role: monitor

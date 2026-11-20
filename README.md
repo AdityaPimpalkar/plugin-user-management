@@ -20,6 +20,7 @@ Supported providers:
 | `percona-server-mongodb` | Percona Server for MongoDB, through the operator's `spec.users` |
 | `provider-cloudnative-pg` | CloudNativePG 1.30+, through the operator's `DatabaseRole` resource |
 | `provider-percona-postgresql` | Percona Operator for PostgreSQL, through SQL as the operator's `postgres` superuser |
+| `provider-altinity-clickhouse` | ClickHouse 24.8+, through SQL as the provider's administrative user |
 | `provider-kserve` | API keys for models on the Envoy AI Gateway, through the provider's key Secrets |
 | `provider-seaweedfs` | S3 identities, access keys and bucket-scoped IAM policies |
 | `mssql` | Microsoft SQL Server (Solanica MSSQL operator), through T-SQL as `sa` |
@@ -118,7 +119,7 @@ corresponding resource are not enumerated yet.
 ## InstanceDatabase
 
 Supported for `provider-cloudnative-pg`, `provider-percona-postgresql`,
-`mssql` and `mariadb`.
+`provider-altinity-clickhouse`, `mssql` and `mariadb`.
 Manage them from the **Databases** section of the instance's **Access** tab,
 next to **Users**. It lists the managed databases with their owner, who can
 connect and status, next to the instance's other databases. There you create
@@ -172,6 +173,10 @@ status:
   with the reason until the database is dropped or given another owner.
 - Users get access to one database with the `read` and `readWrite` roles on
   it (see [Per-database roles](#per-database-roles)).
+- ClickHouse databases are `Atomic` databases. Their owner receives `ALL` with
+  `GRANT OPTION` on that database, while other users need an explicit scoped
+  role. On replicated topologies, users, grants and database DDL are applied
+  with `ON CLUSTER`; standalone installations apply them locally.
 - MariaDB database owners receive `ALL PRIVILEGES` with `GRANT OPTION`.
   User and database management is delegated to mariadb-operator; the plugin
   uses `root` only to read the accounts and schemas that actually exist.

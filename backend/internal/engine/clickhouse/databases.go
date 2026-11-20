@@ -105,6 +105,9 @@ func (e *Engine) SyncDatabase(ctx context.Context, target engine.Target, want en
 		" WITH GRANT OPTION"); err != nil {
 		return inProgress(err, "ClickHouse can't grant the database owner")
 	}
+	if err := s.exec(ctx, "GRANT"+c.onCluster()+" CLUSTER ON *.* TO "+owner); err != nil {
+		return inProgress(err, "ClickHouse can't grant cluster DDL to the database owner")
+	}
 	if oldOwner != "" && oldOwner != want.Owner {
 		if err := s.exec(ctx, "REVOKE"+c.onCluster()+" ALL PRIVILEGES ON "+database+
 			".* FROM "+quoteIdent(oldOwner)); err != nil {

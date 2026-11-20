@@ -21,7 +21,7 @@ const (
 var roleCatalog = []engine.Role{
 	{Name: roleRead, Scope: engine.ScopeDatabase, Description: "Read all current and future tables and views in the database (SELECT)."},
 	{Name: roleReadWrite, Scope: engine.ScopeDatabase, Description: "Read, insert, update and delete rows in all current and future tables in the database.", Includes: []string{roleRead}},
-	{Name: roleDBOwner, Scope: engine.ScopeDatabase, Description: "Do anything in the database and grant its privileges to other users (ALL WITH GRANT OPTION).", Includes: []string{roleRead, roleReadWrite}},
+	{Name: roleDBOwner, Scope: engine.ScopeDatabase, Description: "Manage all database objects, run its DDL across the cluster and grant its privileges to other users.", Includes: []string{roleRead, roleReadWrite}},
 	{Name: roleMonitor, Scope: engine.ScopeCluster, Description: "Read ClickHouse system tables for monitoring."},
 }
 

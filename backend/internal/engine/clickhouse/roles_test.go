@@ -78,6 +78,7 @@ func TestUserStatementsUseHashAndScopedPrivileges(t *testing.T) {
 	assert.Contains(t, joined, "SELECT, INSERT, ALTER UPDATE, ALTER DELETE ON `orders`.*")
 	assert.Contains(t, joined, "SELECT ON `system`.*")
 	assert.Contains(t, joined, "ALL ON `owned`.* TO `orders-app` WITH GRANT OPTION")
+	assert.Contains(t, joined, "GRANT ON CLUSTER `clickhouse` CLUSTER ON *.* TO `orders-app`")
 	assert.NotContains(t, joined, "password")
 }
 

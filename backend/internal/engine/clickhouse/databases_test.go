@@ -22,6 +22,7 @@ func TestSyncDatabaseCreatesOwnerAndManagedMarker(t *testing.T) {
 	assert.Contains(t, queries, "CREATE DATABASE IF NOT EXISTS `orders` ON CLUSTER `clickhouse` ENGINE = Atomic")
 	assert.Contains(t, queries, "COMMENT 'Managed by OpenEverest; owner=owner'")
 	assert.Contains(t, queries, "GRANT ON CLUSTER `clickhouse` ALL ON `orders`.* TO `owner` WITH GRANT OPTION")
+	assert.Contains(t, queries, "GRANT ON CLUSTER `clickhouse` CLUSTER ON *.* TO `owner`")
 	assert.Contains(t, queries, "MODIFY COMMENT")
 }
 

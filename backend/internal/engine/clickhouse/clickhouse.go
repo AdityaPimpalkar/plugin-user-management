@@ -239,12 +239,16 @@ func userStatements(c cluster, username, passwordHash string, roles []engine.Rol
 			statements = append(statements, "GRANT"+c.onCluster()+" "+
 				strings.Join(rolePrivileges(grant.Role), ", ")+" ON "+
 				quoteIdent(grant.Database)+".* TO "+user+option)
+			if grant.Role == roleDBOwner {
+				statements = append(statements, "GRANT"+c.onCluster()+" CLUSTER ON *.* TO "+user)
+			}
 		}
 	}
 	for database, owner := range owners {
 		if owner == username {
 			statements = append(statements, "GRANT"+c.onCluster()+
-				" ALL ON "+quoteIdent(database)+".* TO "+user+" WITH GRANT OPTION")
+				" ALL ON "+quoteIdent(database)+".* TO "+user+" WITH GRANT OPTION",
+				"GRANT"+c.onCluster()+" CLUSTER ON *.* TO "+user)
 		}
 	}
 	return statements

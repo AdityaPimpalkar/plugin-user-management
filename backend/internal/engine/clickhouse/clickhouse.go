@@ -217,8 +217,8 @@ func userStatements(c cluster, username, passwordHash string, roles []engine.Rol
 	statements := []string{
 		"CREATE USER IF NOT EXISTS " + user + c.onCluster() +
 			" IDENTIFIED WITH sha256_hash BY " + hash +
-			" HOST ANY DEFAULT DATABASE " + quoteIdent(defaultDatabase) +
-			" ROLE " + quoteIdent(managedRole),
+			" HOST ANY DEFAULT DATABASE " + quoteIdent(defaultDatabase),
+		"GRANT" + c.onCluster() + " " + quoteIdent(managedRole) + " TO " + user,
 		"ALTER USER " + user + c.onCluster() + " IDENTIFIED WITH sha256_hash BY " + hash,
 		"REVOKE" + c.onCluster() + " SELECT ON `system`.* FROM " + user,
 	}

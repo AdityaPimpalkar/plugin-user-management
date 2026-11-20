@@ -74,7 +74,7 @@ func TestUserStatementsUseHashAndScopedPrivileges(t *testing.T) {
 	joined := stringsJoin(queries)
 	assert.Contains(t, joined, "ON CLUSTER `clickhouse`")
 	assert.Contains(t, joined, "IDENTIFIED WITH sha256_hash BY '0123456789abcdef'")
-	assert.Contains(t, joined, "ROLE `openeverest_managed`")
+	assert.Contains(t, joined, "GRANT ON CLUSTER `clickhouse` `openeverest_managed` TO `orders-app`")
 	assert.Contains(t, joined, "SELECT, INSERT, ALTER UPDATE, ALTER DELETE ON `orders`.*")
 	assert.Contains(t, joined, "SELECT ON `system`.*")
 	assert.Contains(t, joined, "ALL ON `owned`.* TO `orders-app` WITH GRANT OPTION")

@@ -30,6 +30,8 @@ plugin:
         - percona-server-mongodb
         - provider-cloudnative-pg
         - provider-percona-postgresql
+        - provider-altinity-clickhouse
+        - altinity-clickhouse
         - provider-kserve
         - provider-seaweedfs
         - mssql

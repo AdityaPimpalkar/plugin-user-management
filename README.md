@@ -25,6 +25,7 @@ Supported providers:
 | `provider-seaweedfs` | S3 identities, access keys and bucket-scoped IAM policies |
 | `mssql` | Microsoft SQL Server (Solanica MSSQL operator), through T-SQL as `sa` |
 | `mariadb` | MariaDB, through mariadb-operator `User`, `Grant` and `Database` resources |
+| `percona-xtradb-cluster` | Percona XtraDB Cluster 5.7, 8.0 and 8.4 (Percona Operator for MySQL based on PXC), through SQL as `root` |
 | `valkey` | Valkey (valkey-operator 0.9+), through the `ValkeyCluster`'s `spec.acl.users` |
 
 ## InstanceUser
@@ -76,7 +77,9 @@ See [examples/instanceuser.yaml](examples/instanceuser.yaml) (MongoDB),
 [examples/instanceuser-valkey.yaml](examples/instanceuser-valkey.yaml)
 (Valkey),
 [examples/instanceuser-mariadb.yaml](examples/instanceuser-mariadb.yaml)
-(MariaDB) and
+(MariaDB),
+[examples/instanceuser-pxc.yaml](examples/instanceuser-pxc.yaml)
+(Percona XtraDB Cluster) and
 [examples/instanceuser-kserve.yaml](examples/instanceuser-kserve.yaml)
 (an API key for a model).
 
@@ -125,7 +128,8 @@ corresponding resource are not enumerated yet.
 ## InstanceDatabase
 
 Supported for `provider-cloudnative-pg`, `provider-percona-postgresql`,
-`provider-altinity-clickhouse`, `mssql` and `mariadb`.
+`provider-altinity-clickhouse`, `mssql`, `mariadb` and
+`percona-xtradb-cluster`.
 Manage them from the **Databases** section of the instance's **Access** tab,
 next to **Users**. It lists the managed databases with their owner, who can
 connect and status, next to the instance's other databases. There you create
@@ -186,6 +190,8 @@ status:
 - MariaDB database owners receive `ALL PRIVILEGES` with `GRANT OPTION`.
   User and database management is delegated to mariadb-operator; the plugin
   uses `root` only to read the accounts and schemas that actually exist.
+- Percona XtraDB Cluster database owners receive `ALL PRIVILEGES` with
+  `GRANT OPTION`; see the [engine](#percona-xtradb-cluster-engine).
 - `connect` tells who can connect to the database. With `Public`,
   PostgreSQL's default, every user can, but without a role on it they can't
   read or change its tables. With `Granted` (`REVOKE CONNECT ... FROM
@@ -485,6 +491,56 @@ InstanceDatabases, in T-SQL:
   login; while it owns a database, it stays `Deleting` with the reason.
 - The connection string is `sqlserver://<user>:<password>@<host>:1433`,
   like the Instance's own connection details.
+
+### Percona XtraDB Cluster engine
+
+The operator's `spec.users` never revokes grants nor drops users, so the
+plugin manages users and InstanceDatabases in SQL:
+
+- Connects as `root` (key `root` of the cluster's users Secret,
+  `everest-secrets-<instance>`) through the proxy the provider deploys,
+  `<instance>-haproxy` or `<instance>-proxysql`, over TLS verified against
+  the CA in `<instance>-ssl` with the server name `<instance>-pxc`, which the
+  operator's certificates carry. Galera replicates the account and database
+  statements to every node. With ProxySQL, a new user can connect through
+  the proxy once the operator's next user sync has copied it there.
+- Which users and databases the plugin manages, and the owner of each
+  database, are kept in the schema `openeverest_user_management`, which works
+  the same on 5.7, 8.0 and 8.4. The plugin only alters or drops users and
+  databases listed there, so users and databases created in SQL are never
+  taken over. The schema is reserved, like `mysql`, `sys`,
+  `information_schema` and `performance_schema`.
+- Each user is a `'<user>'@'%'` account; usernames are at most 32 characters
+  without quotes or `\`. The operator's users (`root`, `operator`, `monitor`,
+  `xtrabackup`, `replication`, `proxyadmin`, `pmmserver`, ...) and `mysql.*`
+  accounts are system users. Passwords are read from the user's Secret,
+  under any key. The plugin keeps a salted PBKDF2 fingerprint of each one in
+  its schema and only runs `ALTER USER` when the Secret changes.
+- Roles: `read` (`SELECT`), `readWrite` (`SELECT`, `INSERT`, `UPDATE`,
+  `DELETE`) and `dbOwner` (`ALL PRIVILEGES WITH GRANT OPTION`) on one
+  database, and `monitor` (`PROCESS` and `REPLICATION CLIENT`) on the server.
+  Roles can't be granted on the system schemas. The `_` in a database name is
+  escaped, so it isn't a `GRANT` wildcard. The escaped name must fit MySQL's
+  64-character limit, so each `_` counts twice in a database name. The plugin owns the
+  database-level privileges of the users it manages: every reconcile, and
+  every 5 minutes once `Ready`, revokes those no role declares and restores
+  the declared ones, so changes made in SQL are reverted.
+- InstanceDatabases are created with `CREATE DATABASE`, and their owner gets
+  `ALL PRIVILEGES` with `GRANT OPTION` on them. A role granted to the owner on
+  its own database is reported as held. Changing the owner revokes the
+  previous owner's privileges. `connect` has no effect: MySQL only shows users
+  the databases they have privileges on, and the UI doesn't offer the choice.
+- Releasing removes the database from the plugin's schema. The former owner
+  then keeps only the roles its InstanceUser declares on it. Dropping revokes
+  the owner's privileges, then runs `DROP DATABASE`, which waits at most 10
+  seconds (`lock_wait_timeout`) for transactions using the database. Until
+  they end, the InstanceDatabase stays `Deleting` with the reason.
+- Deleting a user runs `DROP USER`; its open connections keep running until
+  they end, as MySQL doesn't close them. While it owns a database, it stays
+  `Deleting` with the reason.
+- Until the `PerconaXtraDBCluster` is `ready`, users stay `Pending`.
+- The connection string is `mysql://<user>:<password>@<proxy>:3306`, like the
+  Instance's own connection details.
 
 ### Valkey engine
 
@@ -789,6 +845,9 @@ kubectl apply -f examples/instanceuser-percona-postgresql.yaml
 kubectl apply -f examples/instanceuser-kserve.yaml
 # SQL Server, with provider-mssql installed and an instance named mssql-users:
 kubectl apply -f examples/instanceuser-mssql.yaml
+# Percona XtraDB Cluster, with provider-percona-xtradb-cluster installed and
+# an instance named orders:
+kubectl apply -f examples/instanceuser-pxc.yaml
 ```
 
 `make dev-deploy` needs Docker and installs

@@ -36,6 +36,7 @@ plugin:
         - provider-seaweedfs
         - mssql
         - mariadb
+        - percona-xtradb-cluster
         - valkey
 
 # PostgreSQL options of databases (InstanceDatabase spec.postgresql).

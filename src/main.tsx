@@ -16,6 +16,7 @@ const SUPPORTED_PROVIDERS = [
   'provider-kserve',
   'mssql',
   'mariadb',
+  'percona-xtradb-cluster',
   'valkey',
 ];
 

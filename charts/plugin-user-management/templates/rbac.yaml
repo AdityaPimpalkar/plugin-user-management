@@ -76,6 +76,12 @@ rules:
   - apiGroups: ["k8s.mariadb.com"]
     resources: ["users", "grants", "databases"]
     verbs: ["get", "list", "create", "patch", "delete"]
+  # Percona XtraDB Cluster: users and databases are managed in SQL as root
+  # (Secret everest-secrets-<instance>). The PerconaXtraDBCluster gives the
+  # proxy, TLS Secret and readiness.
+  - apiGroups: ["pxc.percona.com"]
+    resources: ["perconaxtradbclusters"]
+    verbs: ["get"]
   # Valkey: users are declared in the ValkeyCluster's spec.acl.users
   # (server-side apply under the plugin's own field manager). The operator
   # renders them into Secret internal-<instance>-acl; the ValkeyNodes tell
